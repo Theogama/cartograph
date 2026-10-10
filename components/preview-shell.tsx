@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { DependencyGraph } from "@/components/dependency-graph";
 import type { FileKind } from "@/lib/file-categories";
+import { buildRepositoryInsights, walkGraph } from "@/lib/graph-maths";
 import type { FileRecord, ImportRecord } from "@/lib/repository-parser";
 
 type CategorySummary = {
@@ -70,6 +71,11 @@ export function PreviewShell({
   const [selection, setSelection] = useState<DetailSelection>(null);
   const [detailTab, setDetailTab] = useState<DetailTab>("structure");
   const [hoveredFilePath, setHoveredFilePath] = useState<string | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<FileKind | null>(null);
+  const [graphWalk, setGraphWalk] = useState<
+    | { kind: "blast" | "chain"; files: string[] }
+    | null
+  >(null);
 
   const resolvedImportCount = imports.filter(
     (edge) => edge.status === "inside" && edge.target !== null,
@@ -110,6 +116,25 @@ export function PreviewShell({
       unclassifiedCount: skippedFiles.length,
     };
   }, [files, skippedFiles]);
+
+  const insights = useMemo(() => buildRepositoryInsights(files, imports), [files, imports]);
+
+  const selectedCategoryMatches = useMemo(() => {
+    if (selectedCategory === null) {
+      return 0;
+    }
+
+    if (selection?.type === "file") {
+      return files.filter((file) => file.path === selection.filePath && file.kind === selectedCategory).length;
+    }
+
+    if (selection?.type === "module") {
+      const folder = selection.moduleId.replace(/^folder:/, "");
+      return files.filter((file) => file.folder === folder && file.kind === selectedCategory).length;
+    }
+
+    return files.filter((file) => file.kind === selectedCategory).length;
+  }, [files, selectedCategory, selection]);
 
   const renderRepositorySummary = () => (
     <div className="space-y-5 px-4 py-4">
@@ -231,6 +256,39 @@ export function PreviewShell({
           </div>
         </div>
 
+        {selectedCategory !== null ? (
+          <p className="font-mono text-[10px] text-foreground/60">
+            {selectedCategoryMatches} file{selectedCategoryMatches === 1 ? "" : "s"} in this view match {selectedCategory}
+          </p>
+        ) : null}
+
+        <div className="grid grid-cols-2 gap-2">
+          <button
+            className="rounded border border-border bg-foreground/[0.02] px-2 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-foreground/70 transition-colors hover:bg-foreground/[0.04]"
+            onClick={() => setGraphWalk({ kind: "blast", files: walkGraph(files, imports, selectedFile.path, "incoming", 2) })}
+            type="button"
+          >
+            Blast radius
+          </button>
+          <button
+            className="rounded border border-border bg-foreground/[0.02] px-2 py-2 font-mono text-[10px] uppercase tracking-[0.14em] text-foreground/70 transition-colors hover:bg-foreground/[0.04]"
+            onClick={() => setGraphWalk({ kind: "chain", files: walkGraph(files, imports, selectedFile.path, "outgoing", 2) })}
+            type="button"
+          >
+            Dependency chain
+          </button>
+        </div>
+
+        {graphWalk ? (
+          <div className="rounded border border-border bg-foreground/[0.02] p-2">
+            <p className="font-mono text-[10px] uppercase tracking-[0.15em] text-foreground/45">
+              {graphWalk.kind === "blast" ? "Blast radius" : "Dependency chain"}
+            </p>
+            <div className="mt-2">{formatPathList(graphWalk.files, hoveredFilePath, (nextPath) => setSelection({ type: "file", filePath: nextPath }), setHoveredFilePath)}</div>
+            <p className="mt-2 font-mono text-[10px] text-foreground/55">{graphWalk.files.length} files</p>
+          </div>
+        ) : null}
+
         <div className="grid grid-cols-2 gap-2">
           <div>
             <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-foreground/45">Depends on</p>
@@ -257,12 +315,22 @@ export function PreviewShell({
       counts.set(file.kind, (counts.get(file.kind) ?? 0) + 1);
     }
 
+    const categoryMatchCount = selectedCategory === null
+      ? selectedModuleFiles.length
+      : selectedModuleFiles.filter((file) => file.kind === selectedCategory).length;
+
     return (
       <div className="space-y-5 px-4 py-4">
         <div>
           <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-foreground/45">Selected folder</p>
           <p className="mt-2 break-all font-mono text-xs text-foreground">{selectedModuleFolder}</p>
         </div>
+
+        {selectedCategory !== null ? (
+          <p className="font-mono text-[10px] text-foreground/60">
+            {categoryMatchCount} of {selectedModuleFiles.length} files in this folder match {selectedCategory}
+          </p>
+        ) : null}
 
         <div>
           <p className="font-mono text-[10px] uppercase tracking-[0.18em] text-foreground/45">Files inside</p>
@@ -336,30 +404,44 @@ export function PreviewShell({
           </div>
 
           <ul className="space-y-1 p-2">
-            {categories.map((category) => (
-              <li key={category.kind}>
-                <div className="flex items-center justify-between gap-2 rounded px-2 py-2.5 hover:bg-foreground/[0.035]">
-                  <div className="flex min-w-0 items-center gap-2.5">
-                    <span
-                      aria-hidden="true"
-                      className="h-2.5 w-2.5 shrink-0 rounded-sm"
-                      style={{ backgroundColor: category.color }}
-                    />
-                    <span className="min-w-0">
-                      <span className="block truncate text-xs text-foreground/80">
-                        {category.name}
+            {categories.map((category) => {
+              const isActive = selectedCategory === category.kind;
+
+              return (
+                <li key={category.kind}>
+                  <button
+                    aria-pressed={isActive}
+                    className={[
+                      "flex w-full items-center justify-between gap-2 rounded px-2 py-2.5 text-left transition-colors",
+                      isActive
+                        ? "bg-foreground/[0.06] ring-1 ring-border"
+                        : "hover:bg-foreground/[0.035]",
+                    ].join(" ")}
+                    onClick={() => setSelectedCategory((current) => current === category.kind ? null : category.kind)}
+                    type="button"
+                  >
+                    <div className="flex min-w-0 items-center gap-2.5">
+                      <span
+                        aria-hidden="true"
+                        className="h-2.5 w-2.5 shrink-0 rounded-sm"
+                        style={{ backgroundColor: category.color }}
+                      />
+                      <span className="min-w-0">
+                        <span className="block truncate text-xs text-foreground/80">
+                          {category.name}
+                        </span>
+                        <span className="mt-0.5 block font-mono text-[10px] text-foreground/45">
+                          {category.extension}
+                        </span>
                       </span>
-                      <span className="mt-0.5 block font-mono text-[10px] text-foreground/45">
-                        {category.extension}
-                      </span>
+                    </div>
+                    <span className="font-mono text-[11px] tabular-nums text-foreground/60">
+                      {category.count}
                     </span>
-                  </div>
-                  <span className="font-mono text-[11px] tabular-nums text-foreground/60">
-                    {category.count}
-                  </span>
-                </div>
-              </li>
-            ))}
+                  </button>
+                </li>
+              );
+            })}
           </ul>
         </aside>
 
@@ -380,8 +462,8 @@ export function PreviewShell({
 
           <div className="relative min-h-0 flex-1">
             <DependencyGraph
+              categoryFilter={selectedCategory}
               files={files}
-              hoveredFilePath={hoveredFilePath}
               imports={imports}
               onHoverFilePath={setHoveredFilePath}
               onSelectionChange={setSelection}
@@ -419,15 +501,48 @@ export function PreviewShell({
 
           <div className="overflow-y-auto pb-4">
             {detailTab === "structure" ? renderPaneContent() : (
-              <div className="flex min-h-[220px] items-center justify-center px-6 text-center">
-                <div className="max-w-[180px]">
-                  <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-foreground/40">
-                    Explanation
-                  </p>
-                  <p className="mt-2 text-xs leading-5 text-foreground/50">
-                    No explanation available yet.
-                  </p>
-                </div>
+              <div className="space-y-3 px-4 py-4">
+                {insights.length === 0 ? (
+                  <div className="flex min-h-[220px] items-center justify-center px-6 text-center">
+                    <div className="max-w-[180px]">
+                      <p className="font-mono text-[11px] uppercase tracking-[0.18em] text-foreground/40">
+                        Insights
+                      </p>
+                      <p className="mt-2 text-xs leading-5 text-foreground/50">
+                        No repository insights found.
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  insights.map((insight) => {
+                    const panelTitle = insight.kind === "nothing-imports"
+                      ? "Files nothing imports"
+                      : insight.kind === "cycles"
+                        ? "Import cycles"
+                        : insight.kind === "too-long"
+                          ? "Oversized files"
+                          : "Unusual fan-out";
+
+                    return (
+                      <details key={insight.kind} className="rounded border border-border bg-foreground/[0.02]">
+                        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2.5 font-mono text-[10px] uppercase tracking-[0.15em] text-foreground/60">
+                          <span>{panelTitle}</span>
+                          <span className="tabular-nums text-foreground/50">{insight.files.length}</span>
+                        </summary>
+                        <div className="space-y-2 border-t border-border px-3 py-3">
+                          <p className="text-xs leading-5 text-foreground/70">{insight.sentence}</p>
+                          <ul className="space-y-1">
+                            {insight.files.slice(0, 8).map((filePath) => (
+                              <li key={filePath} className="font-mono text-[10px] text-foreground/55">
+                                {filePath}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      </details>
+                    );
+                  })
+                )}
               </div>
             )}
           </div>
