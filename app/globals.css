@@ -39,3 +39,22 @@ body {
 * {
   box-sizing: border-box;
 }
+
+.cartograph-flow-controls .react-flow__controls-button {
+  background: var(--panel);
+  border-color: var(--border);
+  fill: var(--foreground);
+}
+
+.cartograph-flow-controls .react-flow__controls-button:hover {
+  background: var(--background);
+}
+
+.react-flow__background {
+  background-color: var(--background);
+}
+
+.cartograph-flow-minimap {
+  background: var(--panel);
+  border: 1px solid var(--border);
+}
