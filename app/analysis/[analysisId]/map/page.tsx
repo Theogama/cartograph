@@ -3,7 +3,12 @@ import { notFound, redirect } from "next/navigation";
 
 import { AnalysisDataWarning } from "@/components/analysis-data-warning";
 import { AnalysisExplorer } from "@/components/analysis-explorer";
-import type { FileRecord, ImportRecord } from "@/lib/repository-parser";
+import type {
+  FileRecord,
+  FileRoleRecord,
+  ImportRecord,
+  RouteRecord,
+} from "@/lib/repository-parser";
 import type { Database } from "@/lib/supabase/database.types";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
@@ -101,7 +106,7 @@ export default async function AnalysisPage({
     redirect(`/analysis/${analysisId}`);
   }
 
-  const [filesResult, edgesResult, skippedResult] = await Promise.all([
+  const [filesResult, edgesResult, skippedResult, routesResult, fileRolesResult] = await Promise.all([
       supabase
         .from("files")
         .select(
@@ -126,11 +131,25 @@ export default async function AnalysisPage({
         .eq("analysis_id", analysisId)
         .order("path")
         .limit(MAX_MAP_ROWS),
+      supabase
+        .from("routes")
+        .select("file_id, method, path", { count: "exact" })
+        .eq("analysis_id", analysisId)
+        .order("path")
+        .limit(MAX_MAP_ROWS),
+      supabase
+        .from("file_roles")
+        .select("file_id, role, source", { count: "exact" })
+        .eq("analysis_id", analysisId)
+        .order("role")
+        .limit(MAX_MAP_ROWS),
   ]);
 
   const fileRows = requireCompleteRows<StoredFileRow>("files", filesResult);
   const edgeRows = requireCompleteRows("imports", edgesResult);
   const skippedFiles = requireCompleteRows("skipped files", skippedResult);
+  const routeRows = requireCompleteRows("routes", routesResult);
+  const fileRoleRows = requireCompleteRows("file roles", fileRolesResult);
 
   const completeFileRows = fileRows.filter(hasCompleteFileMetadata);
   const incompleteFile = fileRows.find((file) => !hasCompleteFileMetadata(file));
@@ -156,6 +175,34 @@ export default async function AnalysisPage({
     fanOut: file.fan_out,
   }));
   const filePathsById = new Map(fileRows.map((file) => [file.id, file.path]));
+  const routes: RouteRecord[] = routeRows.map((route) => {
+    const filePath = filePathsById.get(route.file_id);
+    if (!filePath) {
+      throw new Error(
+        `Unable to load analysis routes: file ${route.file_id} is missing from the stored file set.`,
+      );
+    }
+
+    return {
+      filePath,
+      method: route.method,
+      path: route.path,
+    };
+  });
+  const fileRoles: FileRoleRecord[] = fileRoleRows.map((fileRole) => {
+    const filePath = filePathsById.get(fileRole.file_id);
+    if (!filePath) {
+      throw new Error(
+        `Unable to load analysis file roles: file ${fileRole.file_id} is missing from the stored file set.`,
+      );
+    }
+
+    return {
+      path: filePath,
+      role: fileRole.role,
+      source: fileRole.source as FileRoleRecord["source"],
+    };
+  });
   const imports: ImportRecord[] = edgeRows.map((edge) => {
     const source = filePathsById.get(edge.source_file_id);
     if (!source) {
@@ -199,6 +246,8 @@ export default async function AnalysisPage({
       framework={analysis.framework}
       files={files}
       imports={imports}
+      routes={routes}
+      fileRoles={fileRoles}
       skippedFiles={skippedFiles}
     />
   );

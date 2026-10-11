@@ -44,12 +44,26 @@ export interface CoverageSummary {
   outsideExamples: ImportRecord[];
 }
 
+export interface RouteRecord {
+  filePath: string;
+  method: string;
+  path: string;
+}
+
+export interface FileRoleRecord {
+  path: string;
+  role: string;
+  source: "convention";
+}
+
 export interface RepositoryParseResult {
   root: string;
   framework: string | null;
   generatedAt: string;
   files: FileRecord[];
   edges: ImportRecord[];
+  routes: RouteRecord[];
+  fileRoles: FileRoleRecord[];
   skippedFiles: SkipRecord[];
   summary: {
     filesFound: number;
@@ -67,10 +81,16 @@ export interface RepositoryParseResult {
 
 export interface RepositoryAdapter {
   detectFramework(rootPath: string, files: FileRecord[]): string | null;
+  extractFrameworkMetadata?: (
+    rootPath: string,
+    files: FileRecord[],
+    project: Project,
+  ) => { routes: RouteRecord[]; fileRoles: FileRoleRecord[] };
 }
 
 export const noFrameworkAdapter: RepositoryAdapter = {
   detectFramework: () => null,
+  extractFrameworkMetadata: () => ({ routes: [], fileRoles: [] }),
 };
 
 const SUPPORTED_EXTENSIONS = new Set([
@@ -407,12 +427,19 @@ export async function parseRepository(rootPath: string, adapter: RepositoryAdapt
     unresolvedImports: allEdges.filter((edge) => edge.status === "unresolved").length,
   };
 
+  const framework = adapter.detectFramework(absoluteRoot, records);
+  const frameworkMetadata = adapter.extractFrameworkMetadata
+    ? adapter.extractFrameworkMetadata(absoluteRoot, records, project)
+    : { routes: [], fileRoles: [] };
+
   return {
     root: normalizePath(absoluteRoot),
-    framework: adapter.detectFramework(absoluteRoot, records),
+    framework,
     generatedAt: new Date().toISOString(),
     files: records,
     edges: allEdges,
+    routes: frameworkMetadata.routes,
+    fileRoles: frameworkMetadata.fileRoles,
     skippedFiles,
     summary,
     coverage,
