@@ -25,8 +25,8 @@ export interface ImportRecord {
   kind: ImportKind;
   status: ResolutionStatus;
   reason?: string;
-  line: number;
-  column: number;
+  line: number | null;
+  column: number | null;
 }
 
 export interface SkipRecord {
@@ -83,6 +83,13 @@ const SUPPORTED_EXTENSIONS = new Set([
   ".mts",
   ".cts",
 ]);
+
+function isDeclarationFile(filePath: string): boolean {
+  const normalizedPath = filePath.toLowerCase();
+  return normalizedPath.endsWith(".d.ts") ||
+    normalizedPath.endsWith(".d.mts") ||
+    normalizedPath.endsWith(".d.cts");
+}
 
 const EXCLUDED_DIRECTORIES = new Set([
   ".git",
@@ -154,8 +161,7 @@ async function collectFiles(rootPath: string, skippedFiles: SkipRecord[]): Promi
         continue;
       }
 
-      const isDeclarationFile = filePath.toLowerCase().endsWith(".d.ts") || filePath.toLowerCase().endsWith(".d.mts") || filePath.toLowerCase().endsWith(".d.cts");
-      if (isDeclarationFile) {
+      if (isDeclarationFile(filePath)) {
         const relativePath = normalizePath(path.relative(rootPath, filePath));
         skippedFiles.push({ path: relativePath, reason: "Type declaration file" });
         continue;
@@ -257,7 +263,8 @@ function resolveImportTarget(specifier: string, sourceFilePath: string, rootPath
     const resolvedPath = `${candidatePath}${suffix}`;
     const fileExists = (() => {
       try {
-        return existsSync(resolvedPath) && statSync(resolvedPath).isFile();
+        return existsSync(/* turbopackIgnore: true */ resolvedPath) &&
+          statSync(/* turbopackIgnore: true */ resolvedPath).isFile();
       } catch {
         return false;
       }
@@ -267,7 +274,25 @@ function resolveImportTarget(specifier: string, sourceFilePath: string, rootPath
       if (!isInsideDirectory(resolvedPath, rootPath)) {
         return { status: "outside", target: null, reason: "Import points outside the repository root" };
       }
-      return { status: "inside", target: normalizePath(path.relative(rootPath, resolvedPath)) };
+
+      const target = normalizePath(path.relative(rootPath, resolvedPath));
+      const extension = path.extname(resolvedPath).toLowerCase();
+      if (!SUPPORTED_EXTENSIONS.has(extension)) {
+        return {
+          status: "excluded",
+          target,
+          reason: `Import resolves to an unsupported file type: ${extension || "none"}`,
+        };
+      }
+      if (isDeclarationFile(resolvedPath)) {
+        return {
+          status: "excluded",
+          target,
+          reason: "Import resolves to a type declaration file",
+        };
+      }
+
+      return { status: "inside", target };
     }
   }
 

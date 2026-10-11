@@ -27,7 +27,13 @@ export async function createSupabaseServerClient() {
     getRequiredEnvironmentVariable("NEXT_PUBLIC_SUPABASE_URL"),
     getRequiredEnvironmentVariable("NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY"),
     {
-      accessToken: async () => accessToken,
+      accessToken: async () => {
+        const currentAccessToken = await getToken();
+        if (!currentAccessToken) {
+          throw new Error("The Clerk session expired while accessing Supabase.");
+        }
+        return currentAccessToken;
+      },
       auth: {
         autoRefreshToken: false,
         detectSessionInUrl: false,
