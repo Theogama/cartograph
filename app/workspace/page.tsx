@@ -1,13 +1,8 @@
-import { readFile } from "node:fs/promises";
-import path from "node:path";
-
 import { auth } from "@clerk/nextjs/server";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { AppShell } from "@/components/app-shell";
-import type { RepositoryParseResult } from "@/lib/repository-parser";
-import { seedSampleAnalysis } from "@/lib/seed-sample-analysis";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const instant = false;
@@ -30,21 +25,11 @@ async function WorkspaceContent() {
   }
 
   const supabase = await createSupabaseServerClient();
-  const parseOutputPath = path.join(process.cwd(), ".cartograph", "repo-parse-output.json");
-  const parseOutput = JSON.parse(
-    await readFile(parseOutputPath, "utf8"),
-  ) as RepositoryParseResult;
-
-  await seedSampleAnalysis(
-    supabase,
-    orgId,
-    orgSlug ?? orgId,
-    parseOutput,
-  );
-
   const { data: analyses, error } = await supabase
     .from("analyses")
-    .select("id, repository_url, status, created_at")
+    .select(
+      "id, repository_url, status, stage, stage_message, failed_stage, error_message, created_at, updated_at",
+    )
     .order("created_at", { ascending: false })
     .limit(50);
 
