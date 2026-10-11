@@ -7,8 +7,14 @@ import { DependencyGraph } from "@/components/dependency-graph";
 import { RunAnalysisAgainButton } from "@/components/run-analysis-again-button";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { buildFileCategories } from "@/lib/file-categories";
+import { frameworkRailCategories } from "@/lib/framework-adapters";
 import { buildRepositoryInsights, walkGraph } from "@/lib/graph-maths";
-import type { FileRecord, ImportRecord } from "@/lib/repository-parser";
+import type {
+  FileRecord,
+  FileRoleRecord,
+  ImportRecord,
+  RouteRecord,
+} from "@/lib/repository-parser";
 
 type Selection =
   | { type: "file"; filePath: string }
@@ -63,6 +69,8 @@ export function AnalysisExplorer({
   framework,
   files,
   imports,
+  routes,
+  fileRoles,
   skippedFiles,
 }: {
   analysisId: string;
@@ -71,6 +79,8 @@ export function AnalysisExplorer({
   framework: string | null;
   files: FileRecord[];
   imports: ImportRecord[];
+  routes: RouteRecord[];
+  fileRoles: FileRoleRecord[];
   skippedFiles: SkippedFile[];
 }) {
   const [selection, setSelection] = useState<Selection>(null);
@@ -82,6 +92,57 @@ export function AnalysisExplorer({
   >(null);
 
   const categories = useMemo(() => buildFileCategories(files), [files]);
+  const frameworkRoleGroups = useMemo(() => {
+    if (!framework || fileRoles.length === 0) {
+      return [] as Array<{ name: string; count: number; paths: string[]; color: string; kind?: never }>;
+    }
+
+    const grouped = new Map<string, { count: number; paths: Set<string>; color: string }>();
+    for (const record of fileRoles) {
+      const existing = grouped.get(record.role) ?? {
+        count: 0,
+        paths: new Set<string>(),
+        color: "#94a3b8",
+      };
+      existing.count += 1;
+      existing.paths.add(record.path);
+      grouped.set(record.role, existing);
+    }
+
+    const orderedNames = frameworkRailCategories(framework).map((category) => category.name);
+    const ordered = orderedNames
+      .filter((name) => grouped.has(name))
+      .map((name) => ({
+        name,
+        count: grouped.get(name)?.count ?? 0,
+        paths: [...(grouped.get(name)?.paths ?? new Set<string>())].sort(),
+        color: frameworkRailCategories(framework).find((category) => category.name === name)?.color ?? "#94a3b8",
+      }));
+
+    const extra = [...grouped.entries()]
+      .filter(([name]) => !orderedNames.includes(name))
+      .map(([name, group]) => ({
+        name,
+        count: group.count,
+        paths: [...group.paths].sort(),
+        color: group.color,
+      }));
+
+    return [...ordered, ...extra];
+  }, [fileRoles, framework]);
+  const railCategories = frameworkRoleGroups.length > 0
+    ? frameworkRoleGroups.map((category) => ({
+        name: category.name,
+        count: category.count,
+        color: category.color,
+        paths: category.paths,
+      }))
+    : categories.map((category) => ({
+        name: category.extension,
+        count: category.count,
+        color: category.color,
+        paths: [],
+      }));
   const insights = useMemo(
     () => buildRepositoryInsights(files, imports),
     [files, imports],
@@ -131,6 +192,9 @@ export function AnalysisExplorer({
   const selectFile = (filePath: string) => {
     setGraphWalk(null);
     setSelection({ type: "file", filePath });
+  };
+  const handleKindSelection = (kind: FileRecord["kind"]) => {
+    setSelectedKind((current) => (current === kind ? null : kind));
   };
 
   const startReading = [...files]
@@ -206,35 +270,50 @@ export function AnalysisExplorer({
               </span>
             </div>
             <ul className="flex gap-1 overflow-x-auto p-2 lg:flex-col">
-              {categories.map((category) => {
-                const active = selectedKind === category.kind;
+              {railCategories.map((category) => {
+                const kind = "kind" in category ? (category.kind as FileRecord["kind"] | undefined) : undefined;
+                const selectable = kind !== undefined;
+                const active = selectable && selectedKind === kind;
+
                 return (
-                  <li className="min-w-[150px] lg:min-w-0" key={category.kind}>
-                    <button
-                      aria-pressed={active}
-                      className={[
-                        "flex w-full items-center justify-between gap-2 rounded px-2 py-2 text-left",
-                        active ? "bg-foreground/[0.06]" : "hover:bg-foreground/[0.035]",
-                      ].join(" ")}
-                      onClick={() =>
-                        setSelectedKind((current) =>
-                          current === category.kind ? null : category.kind,
-                        )
-                      }
-                      type="button"
-                    >
-                      <span className="flex min-w-0 items-center gap-2">
-                        <span
-                          aria-hidden="true"
-                          className="h-2 w-2 shrink-0 rounded-sm"
-                          style={{ backgroundColor: category.color }}
-                        />
-                        <span className="truncate text-[11px]">{category.extension}</span>
-                      </span>
-                      <span className="font-mono text-[10px] tabular-nums text-foreground/55">
-                        {category.count}
-                      </span>
-                    </button>
+                  <li className="min-w-[150px] lg:min-w-0" key={category.name}>
+                    {selectable && kind !== undefined ? (
+                      <button
+                        aria-pressed={active}
+                        className={[
+                          "flex w-full items-center justify-between gap-2 rounded px-2 py-2 text-left",
+                          active ? "bg-foreground/[0.06]" : "hover:bg-foreground/[0.035]",
+                        ].join(" ")}
+                        onClick={() => handleKindSelection(kind)}
+                        type="button"
+                      >
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span
+                            aria-hidden="true"
+                            className="h-2 w-2 shrink-0 rounded-sm"
+                            style={{ backgroundColor: category.color }}
+                          />
+                          <span className="truncate text-[11px]">{category.name}</span>
+                        </span>
+                        <span className="font-mono text-[10px] tabular-nums text-foreground/55">
+                          {category.count}
+                        </span>
+                      </button>
+                    ) : (
+                      <div className="flex w-full items-center justify-between gap-2 rounded px-2 py-2 text-left">
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span
+                            aria-hidden="true"
+                            className="h-2 w-2 shrink-0 rounded-sm"
+                            style={{ backgroundColor: category.color }}
+                          />
+                          <span className="truncate text-[11px]">{category.name}</span>
+                        </span>
+                        <span className="font-mono text-[10px] tabular-nums text-foreground/55">
+                          {category.count}
+                        </span>
+                      </div>
+                    )}
                   </li>
                 );
               })}
@@ -370,6 +449,37 @@ export function AnalysisExplorer({
                   onHover={setHoveredFilePath}
                   hoveredFilePath={hoveredFilePath}
                 />
+                <div className="rounded border border-border bg-foreground/[0.02]">
+                  <div className="flex items-center justify-between border-b border-border px-2 py-2">
+                    <h2 className="font-mono text-[10px] uppercase tracking-[0.15em] text-foreground/60">
+                      Routes
+                    </h2>
+                    <span className="font-mono text-[10px] text-foreground/50">
+                      {routes.length}
+                    </span>
+                  </div>
+                  <div className="max-h-64 overflow-y-auto p-2">
+                    {routes.length === 0 ? (
+                      <p className="text-xs text-foreground/50">No framework routes were extracted.</p>
+                    ) : (
+                      <ul className="space-y-1">
+                        {routes.slice(0, 40).map((route) => (
+                          <li
+                            className="flex items-center justify-between gap-2 rounded border border-border/80 bg-background/40 px-2 py-1"
+                            key={`${route.method}:${route.path}:${route.filePath}`}
+                          >
+                            <span className="font-mono text-[10px] text-foreground/70">
+                              {route.method}
+                            </span>
+                            <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-foreground/60">
+                              {route.path}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
                 {skippedFiles.length > 0 ? (
                   <details className="rounded border border-border bg-foreground/[0.02]">
                     <summary className="cursor-pointer px-2 py-2 font-mono text-[10px] uppercase text-foreground/60">

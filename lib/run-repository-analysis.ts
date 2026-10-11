@@ -169,6 +169,46 @@ async function storeParseResult(
     "skipped-file details",
   );
 
+  const routeRows = result.routes.map((route) => {
+    const fileId = fileIds.get(route.filePath);
+    if (!fileId) {
+      throw new Error(`Parser returned a route for an unknown file: ${route.filePath}`);
+    }
+
+    return {
+      organization_id: organizationId,
+      analysis_id: analysisId,
+      file_id: fileId,
+      method: route.method,
+      path: route.path,
+    };
+  });
+  await insertBatches(
+    routeRows,
+    (batch) => supabase.from("routes").insert(batch),
+    "framework routes",
+  );
+
+  const roleRows = result.fileRoles.map((role) => {
+    const fileId = fileIds.get(role.path);
+    if (!fileId) {
+      throw new Error(`Parser returned a file role for an unknown file: ${role.path}`);
+    }
+
+    return {
+      organization_id: organizationId,
+      analysis_id: analysisId,
+      file_id: fileId,
+      role: role.role,
+      source: role.source,
+    };
+  });
+  await insertBatches(
+    roleRows,
+    (batch) => supabase.from("file_roles").insert(batch),
+    "framework file roles",
+  );
+
   const { data, error } = await supabase
     .from("analyses")
     .update({

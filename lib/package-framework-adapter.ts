@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 
+import { buildFrameworkMetadata } from "@/lib/framework-adapters";
 import type { RepositoryAdapter } from "@/lib/repository-parser";
 
 const IGNORED_DIRECTORIES = new Set([
@@ -116,5 +117,9 @@ export const packageFrameworkAdapter: RepositoryAdapter = {
     }
 
     return null;
+  },
+  extractFrameworkMetadata: (rootPath, files, project) => {
+    const framework = packageFrameworkAdapter.detectFramework(rootPath, files);
+    return buildFrameworkMetadata(files, framework, project, rootPath);
   },
 };
