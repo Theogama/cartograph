@@ -11,6 +11,7 @@ import {
   parseRepository,
   type RepositoryParseResult,
 } from "@/lib/repository-parser";
+import { packageFrameworkAdapter } from "@/lib/package-framework-adapter";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 import type { Json } from "@/lib/supabase/database.types";
 
@@ -362,7 +363,7 @@ export async function runPreparedRepositoryAnalysis(
     stage = "parsing";
     try {
       await updateStage(supabase, analysisId, stage, "Parsing TypeScript and JavaScript files and imports.");
-      parseResult = await parseRepository(archive.rootPath);
+      parseResult = await parseRepository(archive.rootPath, packageFrameworkAdapter);
     } finally {
       await archive.cleanup();
     }
