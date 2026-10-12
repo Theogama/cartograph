@@ -3,7 +3,7 @@ import { existsSync, promises as fs, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { Project, SyntaxKind } from "ts-morph";
 
-export type ImportKind = "import" | "re-export" | "dynamic-import";
+export type ImportKind = "import" | "re-export" | "dynamic-import" | "require";
 export type ResolutionStatus = "inside" | "outside" | "excluded" | "unresolved";
 
 export interface FileRecord {
@@ -367,16 +367,16 @@ function createImportEdges(sourceFilePath: string, rootPath: string, project: Pr
 
   for (const expression of sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression)) {
     const expressionText = expression.getExpression().getText();
-    if (expressionText !== "import") {
-      continue;
-    }
-
     const argument = expression.getArguments()[0];
     if (!argument || !argument.isKind(SyntaxKind.StringLiteral)) {
       continue;
     }
 
-    collectSpecifier(argument.getLiteralValue(), "dynamic-import");
+    if (expressionText === "import") {
+      collectSpecifier(argument.getLiteralValue(), "dynamic-import");
+    } else if (expressionText === "require") {
+      collectSpecifier(argument.getLiteralValue(), "require");
+    }
   }
 
   return edges;

@@ -112,6 +112,9 @@ export const packageFrameworkAdapter: RepositoryAdapter = {
     ) {
       return "NestJS";
     }
+    if (hasDependency("express")) {
+      return "Express";
+    }
     if (hasDependency("react")) {
       return "React";
     }
