@@ -16,6 +16,9 @@ const FRAMEWORK_COLORS = {
   Services: "#38bdf8",
   Modules: "#a78bfa",
   Entities: "#14b8a6",
+  Routes: "#8b5cf6",
+  Middleware: "#38bdf8",
+  Models: "#14b8a6",
 } as const;
 
 function normalizePath(value: string): string {
@@ -198,6 +201,29 @@ function fileRoleAssignments(
     return assignments.filter((assignment) => assignment.paths.length > 0);
   }
 
+  if (framework === "Express") {
+    const assignments = [
+      { name: "Routes", folders: new Set(["route", "routes"]), paths: [] as string[], color: FRAMEWORK_COLORS.Routes },
+      { name: "Controllers", folders: new Set(["controller", "controllers"]), paths: [] as string[], color: FRAMEWORK_COLORS.Controllers },
+      { name: "Middleware", folders: new Set(["middleware", "middlewares"]), paths: [] as string[], color: FRAMEWORK_COLORS.Middleware },
+      { name: "Services", folders: new Set(["service", "services"]), paths: [] as string[], color: FRAMEWORK_COLORS.Services },
+      { name: "Models", folders: new Set(["model", "models"]), paths: [] as string[], color: FRAMEWORK_COLORS.Models },
+    ];
+
+    for (const file of files) {
+      const directories = file.path.split("/").slice(0, -1).map((segment) => segment.toLowerCase());
+      for (const assignment of assignments) {
+        if (directories.some((directory) => assignment.folders.has(directory))) {
+          assignment.paths.push(file.path);
+        }
+      }
+    }
+
+    return assignments
+      .filter((assignment) => assignment.paths.length > 0)
+      .map(({ name, paths, color }) => ({ name, paths, color }));
+  }
+
   return [];
 }
 
@@ -369,6 +395,16 @@ export function frameworkRailCategories(framework: string | null): Array<{ name:
       { name: "Services", color: FRAMEWORK_COLORS.Services },
       { name: "Modules", color: FRAMEWORK_COLORS.Modules },
       { name: "Entities", color: FRAMEWORK_COLORS.Entities },
+    ];
+  }
+
+  if (framework === "Express") {
+    return [
+      { name: "Routes", color: FRAMEWORK_COLORS.Routes },
+      { name: "Controllers", color: FRAMEWORK_COLORS.Controllers },
+      { name: "Middleware", color: FRAMEWORK_COLORS.Middleware },
+      { name: "Services", color: FRAMEWORK_COLORS.Services },
+      { name: "Models", color: FRAMEWORK_COLORS.Models },
     ];
   }
 

@@ -41,7 +41,7 @@ export type Database = {
         target_file_id: string | null;
         target_path: string | null;
         specifier: string;
-        kind: "import" | "re-export" | "dynamic-import";
+        kind: "import" | "re-export" | "dynamic-import" | "require";
         status: "inside" | "outside" | "excluded" | "unresolved";
         reason: string | null;
         line: number | null;
