@@ -6,7 +6,6 @@ import { useMemo, useState } from "react";
 import { DependencyGraph } from "@/components/dependency-graph";
 import { RunAnalysisAgainButton } from "@/components/run-analysis-again-button";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { buildFileCategories } from "@/lib/file-categories";
 import { frameworkRailCategories } from "@/lib/framework-adapters";
 import { buildRepositoryInsights, walkGraph } from "@/lib/graph-maths";
 import type {
@@ -22,6 +21,29 @@ type Selection =
   | null;
 
 type SkippedFile = { path: string; reason: string };
+type RailCategory = {
+  name: string;
+  count: number;
+  color: string;
+  paths: string[];
+};
+
+function isConfigFile(filePath: string): boolean {
+  const segments = filePath.toLowerCase().split("/");
+  const filename = segments.at(-1) ?? "";
+
+  return segments.slice(0, -1).some((segment) => segment === "config" || segment === "configs") ||
+    /^(?:config|.+\.config)\.[^.]+$/.test(filename);
+}
+
+function isTestFile(filePath: string): boolean {
+  const segments = filePath.toLowerCase().split("/");
+  const filename = segments.at(-1) ?? "";
+
+  return segments.slice(0, -1).some((segment) =>
+    ["test", "tests", "spec", "specs", "__tests__"].includes(segment),
+  ) || /\.(?:test|spec)\.[^.]+$/.test(filename);
+}
 
 function PathList({
   paths,
@@ -85,28 +107,28 @@ export function AnalysisExplorer({
 }) {
   const [selection, setSelection] = useState<Selection>(null);
   const [hoveredFilePath, setHoveredFilePath] = useState<string | null>(null);
-  const [selectedKind, setSelectedKind] = useState<FileRecord["kind"] | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const [showInsights, setShowInsights] = useState(false);
   const [graphWalk, setGraphWalk] = useState<
     { label: string; files: string[] } | null
   >(null);
 
-  const categories = useMemo(() => buildFileCategories(files), [files]);
   const frameworkRoleGroups = useMemo(() => {
     if (!framework || fileRoles.length === 0) {
-      return [] as Array<{ name: string; count: number; paths: string[]; color: string; kind?: never }>;
+      return [] as Array<{ name: string; count: number; paths: string[]; color: string }>;
     }
 
-    const grouped = new Map<string, { count: number; paths: Set<string>; color: string }>();
+    const grouped = new Map<string, { paths: Set<string>; color: string }>();
     for (const record of fileRoles) {
-      const existing = grouped.get(record.role) ?? {
-        count: 0,
+      const role = framework === "Express" && record.role === "Routes"
+        ? "Routers"
+        : record.role;
+      const existing = grouped.get(role) ?? {
         paths: new Set<string>(),
         color: "#94a3b8",
       };
-      existing.count += 1;
       existing.paths.add(record.path);
-      grouped.set(record.role, existing);
+      grouped.set(role, existing);
     }
 
     const orderedNames = frameworkRailCategories(framework).map((category) => category.name);
@@ -114,7 +136,7 @@ export function AnalysisExplorer({
       .filter((name) => grouped.has(name))
       .map((name) => ({
         name,
-        count: grouped.get(name)?.count ?? 0,
+        count: grouped.get(name)?.paths.size ?? 0,
         paths: [...(grouped.get(name)?.paths ?? new Set<string>())].sort(),
         color: frameworkRailCategories(framework).find((category) => category.name === name)?.color ?? "#94a3b8",
       }));
@@ -123,26 +145,51 @@ export function AnalysisExplorer({
       .filter(([name]) => !orderedNames.includes(name))
       .map(([name, group]) => ({
         name,
-        count: group.count,
+        count: group.paths.size,
         paths: [...group.paths].sort(),
         color: group.color,
       }));
 
     return [...ordered, ...extra];
   }, [fileRoles, framework]);
-  const railCategories = frameworkRoleGroups.length > 0
-    ? frameworkRoleGroups.map((category) => ({
-        name: category.name,
-        count: category.count,
-        color: category.color,
-        paths: category.paths,
-      }))
-    : categories.map((category) => ({
-        name: category.extension,
-        count: category.count,
-        color: category.color,
-        paths: [],
-      }));
+  const railCategories = useMemo<RailCategory[]>(() => {
+    const claimedPaths = new Set<string>();
+    const roleCategories: RailCategory[] = frameworkRoleGroups.flatMap((category) => {
+      const paths = category.paths.filter((filePath) => {
+        if (claimedPaths.has(filePath) || isConfigFile(filePath) || isTestFile(filePath)) {
+          return false;
+        }
+        claimedPaths.add(filePath);
+        return true;
+      });
+
+      return paths.length > 0
+        ? [{ ...category, count: paths.length, paths }]
+        : [];
+    });
+
+    const configPaths = files
+      .filter((file) => !claimedPaths.has(file.path) && isConfigFile(file.path))
+      .map((file) => file.path);
+    configPaths.forEach((filePath) => claimedPaths.add(filePath));
+    const testPaths = files
+      .filter((file) => !claimedPaths.has(file.path) && isTestFile(file.path))
+      .map((file) => file.path);
+    testPaths.forEach((filePath) => claimedPaths.add(filePath));
+    const unclassifiedPaths = files
+      .map((file) => file.path)
+      .filter((filePath) => !claimedPaths.has(filePath));
+
+    return [
+      ...roleCategories,
+      ...[
+        { name: "Config files", color: "#94a3b8", paths: configPaths },
+        { name: "Tests", color: "#94a3b8", paths: testPaths },
+        { name: "Unclassified", color: "#94a3b8", paths: unclassifiedPaths },
+      ].filter((category) => category.paths.length > 0)
+        .map((category) => ({ ...category, count: category.paths.length })),
+    ];
+  }, [files, frameworkRoleGroups]);
   const insights = useMemo(
     () => buildRepositoryInsights(files, imports),
     [files, imports],
@@ -193,9 +240,12 @@ export function AnalysisExplorer({
     setGraphWalk(null);
     setSelection({ type: "file", filePath });
   };
-  const handleKindSelection = (kind: FileRecord["kind"]) => {
-    setSelectedKind((current) => (current === kind ? null : kind));
+  const handleCategorySelection = (categoryName: string) => {
+    setSelectedCategory((current) => (current === categoryName ? null : categoryName));
   };
+  const selectedCategoryPaths = selectedCategory
+    ? new Set(railCategories.find((category) => category.name === selectedCategory)?.paths ?? [])
+    : null;
 
   const startReading = [...files]
     .filter((file) => file.fanIn === 0)
@@ -263,7 +313,7 @@ export function AnalysisExplorer({
           <aside className="border-b border-border bg-panel/50 lg:border-b-0 lg:border-r">
             <div className="flex items-center justify-between border-b border-border px-3 py-2.5">
               <h2 className="font-mono text-[10px] uppercase tracking-[0.16em] text-foreground/60">
-                File types
+                Categories
               </h2>
               <span className="font-mono text-[10px] text-foreground/50">
                 {files.length}
@@ -271,49 +321,31 @@ export function AnalysisExplorer({
             </div>
             <ul className="flex gap-1 overflow-x-auto p-2 lg:flex-col">
               {railCategories.map((category) => {
-                const kind = "kind" in category ? (category.kind as FileRecord["kind"] | undefined) : undefined;
-                const selectable = kind !== undefined;
-                const active = selectable && selectedKind === kind;
+                const active = selectedCategory === category.name;
 
                 return (
                   <li className="min-w-[150px] lg:min-w-0" key={category.name}>
-                    {selectable && kind !== undefined ? (
-                      <button
-                        aria-pressed={active}
-                        className={[
-                          "flex w-full items-center justify-between gap-2 rounded px-2 py-2 text-left",
-                          active ? "bg-foreground/[0.06]" : "hover:bg-foreground/[0.035]",
-                        ].join(" ")}
-                        onClick={() => handleKindSelection(kind)}
-                        type="button"
-                      >
-                        <span className="flex min-w-0 items-center gap-2">
-                          <span
-                            aria-hidden="true"
-                            className="h-2 w-2 shrink-0 rounded-sm"
-                            style={{ backgroundColor: category.color }}
-                          />
-                          <span className="truncate text-[11px]">{category.name}</span>
-                        </span>
-                        <span className="font-mono text-[10px] tabular-nums text-foreground/55">
-                          {category.count}
-                        </span>
-                      </button>
-                    ) : (
-                      <div className="flex w-full items-center justify-between gap-2 rounded px-2 py-2 text-left">
-                        <span className="flex min-w-0 items-center gap-2">
-                          <span
-                            aria-hidden="true"
-                            className="h-2 w-2 shrink-0 rounded-sm"
-                            style={{ backgroundColor: category.color }}
-                          />
-                          <span className="truncate text-[11px]">{category.name}</span>
-                        </span>
-                        <span className="font-mono text-[10px] tabular-nums text-foreground/55">
-                          {category.count}
-                        </span>
-                      </div>
-                    )}
+                    <button
+                      aria-pressed={active}
+                      className={[
+                        "flex w-full items-center justify-between gap-2 rounded px-2 py-2 text-left",
+                        active ? "bg-foreground/[0.06]" : "hover:bg-foreground/[0.035]",
+                      ].join(" ")}
+                      onClick={() => handleCategorySelection(category.name)}
+                      type="button"
+                    >
+                      <span className="flex min-w-0 items-center gap-2">
+                        <span
+                          aria-hidden="true"
+                          className="h-2 w-2 shrink-0 rounded-sm"
+                          style={{ backgroundColor: category.color }}
+                        />
+                        <span className="truncate text-[11px]">{category.name}</span>
+                      </span>
+                      <span className="font-mono text-[10px] tabular-nums text-foreground/55">
+                        {category.count}
+                      </span>
+                    </button>
                   </li>
                 );
               })}
@@ -341,7 +373,7 @@ export function AnalysisExplorer({
             ) : (
               <div className="relative min-h-[520px] flex-1">
                 <DependencyGraph
-                  categoryFilter={selectedKind}
+                  categoryFilter={selectedCategoryPaths}
                   files={files}
                   imports={imports}
                   onHoverFilePath={setHoveredFilePath}

@@ -22,7 +22,6 @@ import {
   layoutDependencyMap,
   type DependencyModule,
 } from "@/lib/dependency-map";
-import type { FileKind } from "@/lib/file-categories";
 import type { FileRecord, ImportRecord } from "@/lib/repository-parser";
 
 const MAX_VISIBLE_FILES = 8;
@@ -240,7 +239,7 @@ function ReactFlowCanvas({
   selection: Selection | null;
   onHoverFilePath: (filePath: string | null) => void;
   onSelectionChange: (selection: Selection | null) => void;
-  categoryFilter: FileKind | null;
+  categoryFilter: ReadonlySet<string> | null;
 }) {
   const [expandedModuleIds, setExpandedModuleIds] = useState<Set<string>>(
     () => new Set(),
@@ -278,9 +277,8 @@ function ReactFlowCanvas({
       return true;
     }
 
-    const file = files.find((candidate) => candidate.path === filePath);
-    return file?.kind === categoryFilter;
-  }, [categoryFilter, files]);
+    return categoryFilter.has(filePath);
+  }, [categoryFilter]);
   const selectionNeighborhood = useMemo(() => {
     const activeFiles = new Set(selectedFiles);
 
@@ -305,7 +303,7 @@ function ReactFlowCanvas({
 
     if (categoryFilter !== null) {
       for (const graphModule of dependencyMap.modules) {
-        const matches = graphModule.files.some((file) => file.kind === categoryFilter);
+        const matches = graphModule.files.some((file) => categoryFilter.has(file.path));
         if (!matches) {
           continue;
         }
@@ -380,7 +378,7 @@ function ReactFlowCanvas({
           highlightedFilePaths: selectionNeighborhood.highlightedFilePaths,
           selected,
           dimmed:
-            (categoryFilter !== null && !module.files.some((file) => file.kind === categoryFilter))
+            (categoryFilter !== null && !module.files.some((file) => categoryFilter.has(file.path)))
             || (selection !== null && !selectionNeighborhood.highlightedModuleIds.has(module.id)),
           color: moduleColors.get(module.id) ?? "#64748b",
           width: layout.width,
@@ -516,7 +514,7 @@ export function DependencyGraph({
   selection: Selection | null;
   onHoverFilePath: (filePath: string | null) => void;
   onSelectionChange: (selection: Selection | null) => void;
-  categoryFilter: FileKind | null;
+  categoryFilter: ReadonlySet<string> | null;
 }) {
   return (
     <ReactFlowProvider>

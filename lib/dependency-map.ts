@@ -41,6 +41,8 @@ export interface LayoutOptions {
 }
 
 const MAX_MODULES = 24;
+const MODULE_VERTICAL_GAP = 56;
+const MODULE_HORIZONTAL_GAP = 144;
 
 function folderDepth(folder: string): number {
   return folder === "." ? 0 : folder.split("/").length;
@@ -229,11 +231,11 @@ export function layoutDependencyMap(
   const graph = new dagre.graphlib.Graph({ multigraph: true });
   graph.setGraph({
     rankdir: "LR",
-    nodesep: 44,
-    ranksep: 112,
-    edgesep: 18,
-    marginx: 28,
-    marginy: 28,
+    nodesep: 64,
+    ranksep: 144,
+    edgesep: 28,
+    marginx: 40,
+    marginy: 40,
   });
   graph.setDefaultEdgeLabel(() => ({}));
 
@@ -281,12 +283,12 @@ export function layoutDependencyMap(
   const columnHeights = moduleColumns.map((column) =>
     column.reduce(
       (height, module, index) =>
-        height + graph.node(module.id).height + (index > 0 ? 32 : 0),
+        height + graph.node(module.id).height + (index > 0 ? MODULE_VERTICAL_GAP : 0),
       0,
     ),
   );
   const maxColumnHeight = Math.max(...columnHeights);
-  let columnX = 28;
+  let columnX = 40;
   const layouts: ModuleLayout[] = [];
 
   moduleColumns.forEach((column, columnIndex) => {
@@ -302,10 +304,10 @@ export function layoutDependencyMap(
         width: graphNode.width,
         height: graphNode.height,
       });
-      y += graphNode.height + 32;
+      y += graphNode.height + MODULE_VERTICAL_GAP;
     });
 
-    columnX += columnWidth + 96;
+    columnX += columnWidth + MODULE_HORIZONTAL_GAP;
   });
 
   return layouts;
