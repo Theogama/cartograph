@@ -1,3 +1,5 @@
+import Link from "next/link";
+import type { ReactNode } from "react";
 import { InviteMembersButton, OrganizationSwitcher, UserButton } from "@clerk/nextjs";
 
 import { LiveAnalysisTable } from "@/components/live-analysis-table";
@@ -9,10 +11,12 @@ export function AppShell({
   analyses,
   organizationId,
   organizationSlug,
+  children,
 }: {
   analyses: AnalysisProgressSnapshot[];
   organizationId: string | null;
   organizationSlug: string | null;
+  children?: ReactNode;
 }) {
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -28,6 +32,12 @@ export function AppShell({
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            <Link
+              href="/workspace/evals"
+              className="rounded-md border border-border px-3 py-2 text-xs font-medium text-foreground/80 transition hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10"
+            >
+              Evaluations
+            </Link>
             <ThemeToggle />
             <OrganizationSwitcher />
             <InviteMembersButton />
@@ -58,7 +68,7 @@ export function AppShell({
           </section>
         ) : null}
 
-        <LiveAnalysisTable initialAnalyses={analyses} />
+        {children ?? <LiveAnalysisTable initialAnalyses={analyses} />}
       </main>
     </div>
   );

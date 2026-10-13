@@ -4,6 +4,11 @@ import { after } from "next/server";
 import { redirect } from "next/navigation";
 
 import {
+  explainSelection,
+  type ExplainSelectionRequest,
+  type ExplainSelectionResult,
+} from "@/lib/ai/explain-selection";
+import {
   prepareRepositoryAnalysis,
   runPreparedRepositoryAnalysis,
   type PreparedRepositoryAnalysis,
@@ -61,6 +66,23 @@ export async function startRepositoryAnalysisAction(
   }
 
   redirect(`/analysis/${prepared.analysisId}`);
+}
+
+export async function explainSelectionAction(
+  request: ExplainSelectionRequest,
+): Promise<ExplainSelectionResult> {
+  try {
+    return await explainSelection(request);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      targetKey: request.target.type === "file" ? `file:${request.target.path}` : `folder:${request.target.folder}`,
+      text: `Unable to explain this ${request.target.type}. ${message}`,
+      stale: false,
+      source: "model",
+      cacheKey: "",
+    };
+  }
 }
 
 export async function retryRepositoryAnalysisAction(

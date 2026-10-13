@@ -22,10 +22,13 @@ import {
   layoutDependencyMap,
   type DependencyModule,
 } from "@/lib/dependency-map";
-import type { FileKind } from "@/lib/file-categories";
 import type { FileRecord, ImportRecord } from "@/lib/repository-parser";
 
 const MAX_VISIBLE_FILES = 8;
+const COLLAPSED_MODULE_HEIGHT = 120;
+const INCOMING_EDGE_COLOR = "#22c55e";
+const OUTGOING_EDGE_COLOR = "#f59e0b";
+const NEUTRAL_EDGE_COLOR = "#64748b";
 const MODULE_COLORS = [
   "#38bdf8",
   "#f97316",
@@ -89,8 +92,7 @@ function moduleHandleTop(
       : 68 + MAX_VISIBLE_FILES * 28 + 17;
   }
 
-  const nodeHeight = 58 + Math.min(144, Math.ceil(Math.sqrt(fileCount) * 18));
-  return 18 + ((fileIndex + 1) / (fileCount + 1)) * (nodeHeight - 36);
+  return 18 + ((fileIndex + 1) / (fileCount + 1)) * (COLLAPSED_MODULE_HEIGHT - 36);
 }
 
 function ModuleNode({ data }: NodeProps<ModuleFlowNode>) {
@@ -101,9 +103,8 @@ function ModuleNode({ data }: NodeProps<ModuleFlowNode>) {
   return (
     <div
       className={[
-        "relative overflow-hidden border border-border bg-panel shadow-sm",
-        expanded ? "rounded-md" : "rounded-md",
-        data.selected ? "ring-2 ring-foreground/60" : "",
+        "relative overflow-hidden rounded-md border border-border bg-panel shadow-sm transition-[border-color,box-shadow,opacity]",
+        data.selected ? "ring-2 ring-blue-500/70" : "hover:border-foreground/30",
       ].join(" ")}
       onClick={() => data.onSelectModule(module.id)}
       style={{
@@ -169,7 +170,7 @@ function ModuleNode({ data }: NodeProps<ModuleFlowNode>) {
             </span>
           </button>
 
-          <ul className="divide-y divide-border/70">
+          <ul className="nowheel max-h-[224px] overflow-y-auto divide-y divide-border/70">
             {visibleFiles.map((file) => (
               <li key={file.path}>
                 <button
@@ -187,6 +188,8 @@ function ModuleNode({ data }: NodeProps<ModuleFlowNode>) {
                     event.stopPropagation();
                     data.onSelectFile(file.path);
                   }}
+                  onMouseEnter={() => data.onHoverFile(file.path)}
+                  onMouseLeave={() => data.onHoverFile(null)}
                   title={file.path}
                   type="button"
                 >
@@ -200,7 +203,11 @@ function ModuleNode({ data }: NodeProps<ModuleFlowNode>) {
             <div className="flex h-[34px] items-center border-t border-border px-3 font-mono text-[10px] text-foreground/50">
               + {hiddenFileCount} more files
             </div>
-          ) : null}
+          ) : (
+            <div className="flex h-[34px] items-center border-t border-border px-3 font-mono text-[10px] text-foreground/50">
+              All files shown
+            </div>
+          )}
         </>
       ) : (
         <button
@@ -213,11 +220,16 @@ function ModuleNode({ data }: NodeProps<ModuleFlowNode>) {
           }}
           type="button"
         >
-          <span className="max-w-full truncate font-mono text-xs font-semibold text-foreground">
+          <span className="line-clamp-2 min-h-8 w-full break-words text-left font-mono text-xs font-semibold leading-4 text-foreground">
             {module.label}
           </span>
-          <span className="mt-1 font-mono text-[10px] text-foreground/55">
-            {module.files.length} files · in {module.fanIn} · out {module.fanOut}
+          <span className="mt-2 flex w-full items-center justify-between gap-2 border-t border-border/70 pt-2 font-mono text-[10px] text-foreground/60">
+            <span>{module.files.length} files</span>
+            <span className="whitespace-nowrap">
+              <span className="text-green-500">in {module.fanIn}</span>
+              {" · "}
+              <span className="text-amber-500">out {module.fanOut}</span>
+            </span>
           </span>
         </button>
       )}
@@ -231,16 +243,20 @@ function ReactFlowCanvas({
   files,
   imports,
   selection,
+  hoveredFilePath,
   onHoverFilePath,
   onSelectionChange,
   categoryFilter,
+  categoryColor,
 }: {
   files: FileRecord[];
   imports: ImportRecord[];
   selection: Selection | null;
+  hoveredFilePath: string | null;
   onHoverFilePath: (filePath: string | null) => void;
   onSelectionChange: (selection: Selection | null) => void;
-  categoryFilter: FileKind | null;
+  categoryFilter: ReadonlySet<string> | null;
+  categoryColor: string | null;
 }) {
   const [expandedModuleIds, setExpandedModuleIds] = useState<Set<string>>(
     () => new Set(),
@@ -278,11 +294,13 @@ function ReactFlowCanvas({
       return true;
     }
 
-    const file = files.find((candidate) => candidate.path === filePath);
-    return file?.kind === categoryFilter;
-  }, [categoryFilter, files]);
+    return categoryFilter.has(filePath);
+  }, [categoryFilter]);
   const selectionNeighborhood = useMemo(() => {
     const activeFiles = new Set(selectedFiles);
+    if (hoveredFilePath) {
+      activeFiles.add(hoveredFilePath);
+    }
 
     const highlightedLinkIds = new Set<string>();
     const highlightedFilePaths = new Set(activeFiles);
@@ -304,20 +322,34 @@ function ReactFlowCanvas({
     }
 
     if (categoryFilter !== null) {
-      for (const graphModule of dependencyMap.modules) {
-        const matches = graphModule.files.some((file) => file.kind === categoryFilter);
-        if (!matches) {
+      for (const filePath of categoryFilter) {
+        const moduleId = dependencyMap.fileToModule[filePath];
+        if (moduleId) {
+          highlightedFilePaths.add(filePath);
+          highlightedModuleIds.add(moduleId);
+        }
+      }
+
+      for (const link of dependencyMap.links) {
+        if (!categoryFilter.has(link.sourceFile) && !categoryFilter.has(link.targetFile)) {
           continue;
         }
-        highlightedModuleIds.add(graphModule.id);
-        for (const file of graphModule.files) {
-          highlightedFilePaths.add(file.path);
+
+        highlightedLinkIds.add(link.id);
+        highlightedFilePaths.add(link.sourceFile);
+        highlightedFilePaths.add(link.targetFile);
+        for (const filePath of [link.sourceFile, link.targetFile]) {
+          const moduleId = dependencyMap.fileToModule[filePath];
+          if (moduleId) {
+            highlightedModuleIds.add(moduleId);
+          }
         }
       }
     }
 
     return { highlightedFilePaths, highlightedLinkIds, highlightedModuleIds };
-  }, [categoryFilter, dependencyMap.fileToModule, dependencyMap.links, dependencyMap.modules, selectedFiles]);
+  }, [categoryFilter, dependencyMap.fileToModule, dependencyMap.links, hoveredFilePath, selectedFiles]);
+  const hasFocusedFile = selection !== null || hoveredFilePath !== null;
 
   const layouts = useMemo(
     () =>
@@ -376,13 +408,18 @@ function ReactFlowCanvas({
           module,
           expanded: expandedModuleIds.has(module.id),
           selectedFilePath: selection?.type === "file" ? selection.filePath : null,
-          hasSelection: selection !== null,
+          hasSelection: hasFocusedFile,
           highlightedFilePaths: selectionNeighborhood.highlightedFilePaths,
           selected,
           dimmed:
-            (categoryFilter !== null && !module.files.some((file) => file.kind === categoryFilter))
-            || (selection !== null && !selectionNeighborhood.highlightedModuleIds.has(module.id)),
-          color: moduleColors.get(module.id) ?? "#64748b",
+            (categoryFilter !== null && !module.files.some((file) => categoryFilter.has(file.path)))
+            || (hasFocusedFile && !selectionNeighborhood.highlightedModuleIds.has(module.id)),
+          color:
+            categoryFilter !== null &&
+            categoryColor !== null &&
+            module.files.some((file) => categoryFilter.has(file.path))
+              ? categoryColor
+              : moduleColors.get(module.id) ?? NEUTRAL_EDGE_COLOR,
           width: layout.width,
           height: layout.height,
           onToggle: toggleModule,
@@ -394,12 +431,14 @@ function ReactFlowCanvas({
     });
   }, [
     categoryFilter,
+    categoryColor,
     dependencyMap.modules,
     expandedModuleIds,
     layouts,
     moduleColors,
     selectionNeighborhood,
     selection,
+    hasFocusedFile,
     onHoverFilePath,
     selectFile,
     selectModule,
@@ -410,11 +449,27 @@ function ReactFlowCanvas({
     () =>
       dependencyMap.links.map((link) => {
         const highlighted = selectionNeighborhood.highlightedLinkIds.has(link.id);
-        const color = moduleColors.get(link.source) ?? "#64748b";
+        const isOutgoing =
+          selectedFiles.has(link.sourceFile) || hoveredFilePath === link.sourceFile;
+        const isIncoming =
+          selectedFiles.has(link.targetFile) || hoveredFilePath === link.targetFile;
+        const isHoveredLink =
+          hoveredFilePath !== null &&
+          (hoveredFilePath === link.sourceFile || hoveredFilePath === link.targetFile);
+        const isCategoryConnection =
+          categoryFilter !== null &&
+          (categoryFilter.has(link.sourceFile) || categoryFilter.has(link.targetFile));
+        const color = isOutgoing
+          ? OUTGOING_EDGE_COLOR
+          : isIncoming
+            ? INCOMING_EDGE_COLOR
+            : isCategoryConnection && categoryColor !== null
+              ? categoryColor
+              : NEUTRAL_EDGE_COLOR;
 
         const categoryMatches =
           categoryFilter === null ||
-          (fileMatchesCategory(link.sourceFile) && fileMatchesCategory(link.targetFile));
+          fileMatchesCategory(link.sourceFile) || fileMatchesCategory(link.targetFile);
         const dimmedByCategory = categoryFilter !== null && !categoryMatches;
 
         return {
@@ -424,23 +479,25 @@ function ReactFlowCanvas({
           sourceHandle: `source:${link.sourceFile}`,
           targetHandle: `target:${link.targetFile}`,
           type: "default",
-          pathOptions: { curvature: 0.65 },
+          pathOptions: { curvature: 0.72 },
           markerEnd: { type: MarkerType.ArrowClosed, color },
           selectable: false,
           style: {
             stroke: color,
-            strokeWidth: highlighted ? 2.1 : 1.25,
+            strokeLinecap: "round",
+            strokeWidth: isHoveredLink ? 2.4 : highlighted ? 1.6 : 1,
+            filter: undefined,
             opacity: categoryFilter !== null
-              ? (dimmedByCategory ? 0.28 : 0.82)
-              : selection === null
-                ? 0.48
+              ? (isHoveredLink ? 1 : dimmedByCategory ? 0.12 : highlighted ? 0.95 : 0.68)
+              : !hasFocusedFile
+                ? 0.62
                 : highlighted
-                  ? 1
-                  : 0.22,
+                  ? 0.95
+                  : 0.12,
           },
         };
       }),
-    [categoryFilter, dependencyMap.links, fileMatchesCategory, moduleColors, selectionNeighborhood, selection],
+    [categoryColor, categoryFilter, dependencyMap.links, fileMatchesCategory, hasFocusedFile, hoveredFilePath, selectedFiles, selectionNeighborhood],
   );
 
   useEffect(() => {
@@ -507,23 +564,29 @@ export function DependencyGraph({
   files,
   imports,
   selection,
+  hoveredFilePath,
   onHoverFilePath,
   onSelectionChange,
   categoryFilter,
+  categoryColor,
 }: {
   files: FileRecord[];
   imports: ImportRecord[];
   selection: Selection | null;
+  hoveredFilePath: string | null;
   onHoverFilePath: (filePath: string | null) => void;
   onSelectionChange: (selection: Selection | null) => void;
-  categoryFilter: FileKind | null;
+  categoryFilter: ReadonlySet<string> | null;
+  categoryColor: string | null;
 }) {
   return (
     <ReactFlowProvider>
       <ReactFlowCanvas
+        categoryColor={categoryColor}
         categoryFilter={categoryFilter}
         files={files}
         imports={imports}
+        hoveredFilePath={hoveredFilePath}
         onHoverFilePath={onHoverFilePath}
         onSelectionChange={onSelectionChange}
         selection={selection}

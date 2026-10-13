@@ -40,6 +40,116 @@ body {
   box-sizing: border-box;
 }
 
+.landing-figure {
+  isolation: isolate;
+}
+
+.landing-figure .graph-link-muted {
+  stroke: #292a30;
+  stroke-width: 1.4;
+}
+
+.landing-figure .graph-link-green,
+.landing-figure .graph-link-amber {
+  stroke-dasharray: 7 11;
+  animation: graphFlow 8s linear infinite;
+}
+
+.landing-figure .graph-link-green {
+  stroke: #69e5a0;
+  stroke-width: 1.7;
+}
+
+.landing-figure .graph-link-amber {
+  stroke: #f0c467;
+  stroke-width: 1.7;
+  animation-delay: -3s;
+}
+
+.landing-figure .graph-card {
+  color: #dedee3;
+}
+
+.landing-figure .graph-card-muted {
+  opacity: 0.22;
+}
+
+.landing-figure .graph-surface {
+  fill: #0b0b0e;
+  stroke: #66666d;
+  stroke-width: 0.8;
+}
+
+.landing-figure .graph-card-selected {
+  fill: #101116;
+  stroke: #528aff;
+  stroke-width: 1.4;
+}
+
+.landing-figure .graph-card-line {
+  fill: #c9c9d0;
+  opacity: 0.68;
+}
+
+.landing-figure .graph-card-line-short {
+  fill: #85858d;
+  opacity: 0.56;
+}
+
+.landing-figure .graph-card-line-bright {
+  fill: #e0e4ed;
+}
+
+.landing-figure .graph-icon-purple {
+  fill: #bd78ed;
+}
+
+.landing-figure .graph-icon-blue {
+  fill: #7a82cd;
+}
+
+.landing-figure .graph-icon-muted {
+  fill: #55566e;
+}
+
+.landing-figure .graph-icon-red {
+  fill: #a54f62;
+}
+
+.landing-figure .graph-icon-teal {
+  fill: #4b9bad;
+}
+
+@keyframes graphFlow {
+  0% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: -72;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing-figure .graph-link-green,
+  .landing-figure .graph-link-amber {
+    animation: none;
+  }
+  .landing-figure .graph-card-selected {
+    animation: none;
+  }
+}
+
+.landing-figure .graph-card-selected {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: selectedPulse 3.2s ease-in-out infinite;
+}
+
+@keyframes selectedPulse {
+  0%, 100% { transform: scale(1); stroke-opacity: 1; }
+  50% { transform: scale(1.03); stroke-opacity: 0.85; }
+}
+
 .cartograph-flow-controls .react-flow__controls-button {
   background: var(--panel);
   border-color: var(--border);

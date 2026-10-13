@@ -16,7 +16,7 @@ const FRAMEWORK_COLORS = {
   Services: "#38bdf8",
   Modules: "#a78bfa",
   Entities: "#14b8a6",
-  Routes: "#8b5cf6",
+  Routers: "#8b5cf6",
   Middleware: "#38bdf8",
   Models: "#14b8a6",
 } as const;
@@ -203,11 +203,11 @@ function fileRoleAssignments(
 
   if (framework === "Express") {
     const assignments = [
-      { name: "Routes", folders: new Set(["route", "routes"]), paths: [] as string[], color: FRAMEWORK_COLORS.Routes },
+      { name: "Routers", folders: new Set(["route", "routes", "router", "routers"]), paths: [] as string[], color: FRAMEWORK_COLORS.Routers },
       { name: "Controllers", folders: new Set(["controller", "controllers"]), paths: [] as string[], color: FRAMEWORK_COLORS.Controllers },
-      { name: "Middleware", folders: new Set(["middleware", "middlewares"]), paths: [] as string[], color: FRAMEWORK_COLORS.Middleware },
       { name: "Services", folders: new Set(["service", "services"]), paths: [] as string[], color: FRAMEWORK_COLORS.Services },
       { name: "Models", folders: new Set(["model", "models"]), paths: [] as string[], color: FRAMEWORK_COLORS.Models },
+      { name: "Middleware", folders: new Set(["middleware", "middlewares"]), paths: [] as string[], color: FRAMEWORK_COLORS.Middleware },
     ];
 
     for (const file of files) {
@@ -400,11 +400,11 @@ export function frameworkRailCategories(framework: string | null): Array<{ name:
 
   if (framework === "Express") {
     return [
-      { name: "Routes", color: FRAMEWORK_COLORS.Routes },
+      { name: "Routers", color: FRAMEWORK_COLORS.Routers },
       { name: "Controllers", color: FRAMEWORK_COLORS.Controllers },
-      { name: "Middleware", color: FRAMEWORK_COLORS.Middleware },
       { name: "Services", color: FRAMEWORK_COLORS.Services },
       { name: "Models", color: FRAMEWORK_COLORS.Models },
+      { name: "Middleware", color: FRAMEWORK_COLORS.Middleware },
     ];
   }
 

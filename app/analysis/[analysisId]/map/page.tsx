@@ -238,12 +238,16 @@ export default async function AnalysisPage({
     };
   });
 
+  const tracingConfigured =
+    process.env.LANGSMITH_TRACING === "true" && Boolean(process.env.LANGSMITH_API_KEY);
+
   return (
     <AnalysisExplorer
       analysisId={analysis.id}
       repositoryUrl={analysis.repository_url}
       commitSha={analysis.commit_sha}
       framework={analysis.framework}
+      tracingConfigured={tracingConfigured}
       files={files}
       imports={imports}
       routes={routes}
