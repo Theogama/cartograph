@@ -1,17 +1,32 @@
 import { auth } from "@clerk/nextjs/server";
+import { after } from "next/server";
 import { redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { AppShell } from "@/components/app-shell";
+import {
+  prepareRepositoryAnalysis,
+  runPreparedRepositoryAnalysis,
+} from "@/lib/run-repository-analysis";
 import { createSupabaseServerClient } from "@/lib/supabase/server";
 
 export const instant = false;
 
-async function WorkspaceContent() {
+async function WorkspaceContent({ repositoryUrl }: { repositoryUrl?: string | null }) {
   const { userId, orgId, orgSlug } = await auth();
 
   if (!userId) {
     redirect("/sign-in");
+  }
+
+  if (repositoryUrl) {
+    const prepared = await prepareRepositoryAnalysis(repositoryUrl);
+    if (prepared.shouldRun) {
+      after(async () => {
+        await runPreparedRepositoryAnalysis(prepared);
+      });
+    }
+    redirect(`/analysis/${prepared.analysisId}`);
   }
 
   if (!orgId) {
@@ -46,7 +61,16 @@ async function WorkspaceContent() {
   );
 }
 
-export default function WorkspacePage() {
+export default async function WorkspacePage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ repositoryUrl?: string | string[] | undefined }> | { repositoryUrl?: string | string[] | undefined };
+}) {
+  const resolvedSearchParams =
+    searchParams && typeof searchParams === "object" && "then" in searchParams
+      ? await searchParams
+      : searchParams;
+
   return (
     <Suspense
       fallback={
@@ -55,7 +79,15 @@ export default function WorkspacePage() {
         </div>
       }
     >
-      <WorkspaceContent />
+      <WorkspaceContent
+        repositoryUrl={
+          resolvedSearchParams && typeof resolvedSearchParams === "object"
+            ? Array.isArray(resolvedSearchParams.repositoryUrl)
+              ? resolvedSearchParams.repositoryUrl[0]
+              : resolvedSearchParams.repositoryUrl
+            : undefined
+        }
+      />
     </Suspense>
   );
 }

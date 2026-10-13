@@ -34,3 +34,17 @@ You can check out [the Next.js GitHub repository](https://github.com/vercel/next
 The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+
+## Evaluations
+
+Set `LANGSMITH_API_KEY`, `LANGSMITH_PROJECT`, and `OPENROUTER_API_KEY` in `.env.local`.
+After running the app and explaining at least one file, use the workspace **Evaluations**
+dashboard to check recent explanations, run the held-out role classifier, or compare
+the current and retired prompts. Prompt comparison uses a model judge and makes model
+calls.
+
+The equivalent script commands are `pnpm evals`, `pnpm eval:roles`, and
+`pnpm eval:prompt`. Role evaluation needs at least 30 eligible source files; an
+optional repository path can be passed to `pnpm eval:roles`. Classifier outputs
+outside the allowed role list are reported as invalid predictions and count as
+incorrect rather than stopping the whole evaluation.

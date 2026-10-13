@@ -120,6 +120,14 @@ export function AnalysisExplorer({
   const [inspectorTab, setInspectorTab] = useState<
     "structure" | "explanation" | "insights"
   >("structure");
+  const [askMode, setAskMode] = useState(false);
+  const [askQuestion, setAskQuestion] = useState("");
+  const [askAnswer, setAskAnswer] = useState<string | null>(null);
+  const [askError, setAskError] = useState<string | null>(null);
+  const [askLoading, setAskLoading] = useState(false);
+  const [askSteps, setAskSteps] = useState<Array<{ name: string; summary: string; detail: string[] }>>([]);
+  const [lastRepositoryQuestion, setLastRepositoryQuestion] = useState<string | null>(null);
+  const [lastRepositoryTarget, setLastRepositoryTarget] = useState<string | null>(null);
   const [graphWalk, setGraphWalk] = useState<
     { label: string; files: string[] } | null
   >(null);
@@ -285,6 +293,72 @@ export function AnalysisExplorer({
       setExplanationError(message);
     } finally {
       setPendingExplanation((current) => (current === targetKey ? null : current));
+    }
+  };
+
+  const openAskMode = () => {
+    setAskError(null);
+    setAskMode(true);
+  };
+
+  const closeAskMode = () => {
+    setAskMode(false);
+    setAskError(null);
+    setAskAnswer(null);
+  };
+
+  const runAskQuestion = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    const question = askQuestion.trim();
+    if (!question) {
+      setAskError("Type a repository question before asking.");
+      return;
+    }
+
+    setAskLoading(true);
+    setAskError(null);
+    setAskAnswer(null);
+    setAskSteps([]);
+    setAskMode(true);
+
+    try {
+      const response = await fetch(`/api/analysis/${analysisId}/agent`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          question,
+          previousQuestion: lastRepositoryQuestion,
+          previousTarget: lastRepositoryTarget,
+        }),
+      });
+
+      const data = (await response.json()) as {
+        error?: string;
+        answer?: string;
+        toolCalls?: Array<{ name: string; summary: string; detail: string[] }>;
+        target?: string | null;
+      };
+
+      if (!response.ok || !data.answer) {
+        throw new Error(data.error ?? "The agent could not answer that question.");
+      }
+
+      const steps = data.toolCalls ?? [];
+      for (const [index, step] of steps.entries()) {
+        setAskSteps((current) => [...current, step]);
+        await new Promise((resolve) => setTimeout(resolve, 220 + index * 120));
+      }
+
+      setAskAnswer(data.answer);
+      setLastRepositoryQuestion(question);
+      setLastRepositoryTarget(data.target ?? lastRepositoryTarget);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setAskError(message);
+    } finally {
+      setAskLoading(false);
     }
   };
 
@@ -592,23 +666,103 @@ export function AnalysisExplorer({
             <div className="flex border-b border-border">
               {(["structure", "explanation", "insights"] as const).map((tab) => (
                 <button
-                  aria-pressed={inspectorTab === tab}
+                  aria-pressed={inspectorTab === tab && !askMode}
                   className={[
                     "flex-1 border-b-2 px-2 py-2.5 font-mono text-[10px] capitalize",
-                    inspectorTab === tab
+                    inspectorTab === tab && !askMode
                       ? "border-sky-400 text-foreground"
                       : "border-transparent text-foreground/55 hover:text-foreground",
                   ].join(" ")}
                   key={tab}
-                  onClick={() => setInspectorTab(tab)}
+                  onClick={() => {
+                    setAskMode(false);
+                    setInspectorTab(tab);
+                  }}
                   type="button"
                 >
                   {tab}
                 </button>
               ))}
+              <button
+                aria-pressed={askMode}
+                className={[
+                  "border-b-2 px-2 py-2.5 font-mono text-[10px] capitalize",
+                  askMode
+                    ? "border-sky-400 text-foreground"
+                    : "border-transparent text-foreground/55 hover:text-foreground",
+                ].join(" ")}
+                onClick={askMode ? closeAskMode : openAskMode}
+                type="button"
+              >
+                Ask
+              </button>
             </div>
 
-            {inspectorTab === "insights" ? (
+            {askMode ? (
+              <div className="space-y-3 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <h2 className="font-mono text-[10px] uppercase tracking-[0.15em] text-foreground/50">
+                    Ask the repo
+                  </h2>
+                  <button
+                    className="font-mono text-[10px] text-foreground/55 hover:text-foreground"
+                    onClick={closeAskMode}
+                    type="button"
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <form className="space-y-3" onSubmit={runAskQuestion}>
+                  <textarea
+                    className="min-h-[88px] w-full rounded border border-border bg-background px-2 py-2 font-mono text-[10px] text-foreground placeholder:text-foreground/35"
+                    onChange={(event) => setAskQuestion(event.target.value)}
+                    placeholder="Where is authentication handled?"
+                    value={askQuestion}
+                  />
+                  <button
+                    className="w-full rounded border border-border bg-foreground/[0.03] px-2 py-2 font-mono text-[10px] text-foreground/80 hover:bg-foreground/[0.06] disabled:cursor-wait disabled:opacity-60"
+                    disabled={askLoading}
+                    type="submit"
+                  >
+                    {askLoading ? "Looking through the repo…" : "Ask"}
+                  </button>
+                </form>
+
+                {askError ? (
+                  <p className="text-xs text-red-700 dark:text-red-300" role="alert">
+                    {askError}
+                  </p>
+                ) : null}
+
+                {askSteps.length > 0 ? (
+                  <div className="space-y-2 border-t border-border pt-3">
+                    {askSteps.map((step) => (
+                      <div className="rounded border border-border bg-foreground/[0.02] p-2" key={`${step.name}:${step.summary}`}>
+                        <p className="font-mono text-[9px] uppercase text-foreground/55">{step.name}</p>
+                        <p className="mt-1 text-[10px] text-foreground/75">{step.summary}</p>
+                        {step.detail.length > 0 ? (
+                          <ul className="mt-2 list-disc space-y-1 pl-4 text-[10px] text-foreground/55">
+                            {step.detail.slice(0, 5).map((line) => (
+                              <li key={line}>{line}</li>
+                            ))}
+                          </ul>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+
+                {askAnswer ? (
+                  <div className="rounded border border-border bg-foreground/[0.02] p-3">
+                    <p className="font-mono text-[9px] uppercase tracking-[0.15em] text-foreground/50">
+                      Answer
+                    </p>
+                    <p className="mt-2 text-xs leading-6 text-foreground/80">{askAnswer}</p>
+                  </div>
+                ) : null}
+              </div>
+            ) : inspectorTab === "insights" ? (
               <div className="space-y-2 p-3">
                 {insights.length === 0 ? (
                   <p className="py-5 text-center text-xs text-foreground/50">

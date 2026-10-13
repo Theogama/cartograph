@@ -8,7 +8,10 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "parse:repo": "node --experimental-strip-types scripts/parse-repository.ts"
+    "parse:repo": "node --experimental-strip-types scripts/parse-repository.ts",
+    "evals": "node --conditions=react-server --import tsx scripts/run-evals.ts",
+    "eval:roles": "node --conditions=react-server --import tsx scripts/run-role-eval.ts",
+    "eval:prompt": "node --conditions=react-server --import tsx scripts/run-prompt-eval.ts"
   },
   "dependencies": {
     "@clerk/nextjs": "^7.9.12",

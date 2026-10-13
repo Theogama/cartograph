@@ -3,14 +3,15 @@ import "server-only";
 import { createHash } from "node:crypto";
 import { traceable } from "langsmith/traceable";
 
+import {
+  buildExplanationPrompt,
+  EXPLANATION_SYSTEM_PROMPT,
+  type ExplanationTarget,
+} from "@/lib/ai/explanation-prompt";
 import { getOpenRouterClient } from "@/lib/ai/openrouter-client";
 
 export const EXPLANATION_MODEL =
   process.env.OPENROUTER_MODEL ?? "openai/gpt-oss-20b";
-
-export type ExplanationTarget =
-  | { type: "file"; path: string }
-  | { type: "folder"; folder: string };
 
 export interface ExplainSelectionRequest {
   analysisId: string;
@@ -96,38 +97,6 @@ function computeContentHash(input: string): string {
   return createHash("sha256").update(input).digest("hex");
 }
 
-function buildPrompt(target: ExplanationTarget, context: { path: string; text: string }[]): string {
-  const roleInstruction = "If no framework adapter or file naming gives a confident structural role, assign a non-structural role such as service, repository, model, util, config, component, or hook. Never say page, route, or controller.";
-
-  if (target.type === "file") {
-    return [
-      `Explain this file in the context of its actual neighbours.`,
-      `Target file: ${target.path}`,
-      `This file is immediately connected to these real neighbours: ${context.map((item) => item.path).join(", ") || "none"}`,
-      `Use the code of the target and the neighbours to explain what the file does, how it participates in the repository, and why it is connected to those files.`,
-      `Keep the answer to a short paragraph, not a long essay. Do not guess or invent imports. Name the files you rely on, and if you point to a path, it must be one that is actually in the context.`,
-      roleInstruction,
-      "The answer should be plain prose with only inline code, bullet lists, and bold text. No headings. No markdown tables.",
-      "When you mention a repository path, keep the exact relative path from the repo root and do not invent missing files.",
-      "Source context:",
-      ...context.map((item) => `--- ${item.path} ---\n${item.text}`),
-    ].join("\n\n");
-  }
-
-  return [
-    `Explain this folder in the context of the repository.`,
-    `Folder: ${target.folder}`,
-    `This folder contains ${context.length} relevant files and its incoming traffic points here because the repository is using it as a central dependency.`,
-    `Use the files in the folder and the surrounding import relationships to explain what sits in the folder, why the project points at it, and what the folder is responsible for.`,
-    `Keep the answer to a short paragraph or a couple of short bullets. Do not summarize one file only.`,
-    roleInstruction,
-    "The answer should be plain prose with only inline code, bullet lists, and bold text. No headings. No markdown tables.",
-    "When you mention a repository path, keep the exact relative path from the repo root and do not invent missing files.",
-    "Source context:",
-    ...context.map((item) => `--- ${item.path} ---\n${item.text}`),
-  ].join("\n\n");
-}
-
 async function collectContext(
   repositoryUrl: string,
   commitSha: string | null,
@@ -202,9 +171,18 @@ async function explainSelectionValue(
   const payload = JSON.stringify(context.map((item) => ({ path: item.path, text: item.text })));
   const contentHash = computeContentHash(payload);
   const cacheKey = `${EXPLANATION_MODEL}:${targetKey}:${contentHash}`;
+  const allowedPaths = [...new Set([
+    ...context.map((item) => item.path),
+    ...(request.target.type === "folder" ? [request.target.folder] : []),
+  ])];
+  const traceInput = {
+    target: request.target,
+    context,
+    allowedPaths,
+  };
 
   return traceable(
-    async (): Promise<ExplainSelectionResult> => {
+    async (input: typeof traceInput): Promise<ExplainSelectionResult> => {
       const cached = explanationCache.get(cacheKey);
       if (cached) {
         return { ...cached, source: "cache" };
@@ -218,17 +196,18 @@ async function explainSelectionValue(
       );
 
       const client = getOpenRouterClient();
+      const prompt = buildExplanationPrompt(input.target, input.context);
       const completion = await client.chat.completions.create({
         model: EXPLANATION_MODEL,
         temperature: 0.2,
         messages: [
           {
             role: "system",
-            content: "You explain a repository file or folder from code context. Use only the provided files. Answer in the repository's language and avoid invented connections.",
+            content: EXPLANATION_SYSTEM_PROMPT,
           },
           {
             role: "user",
-            content: buildPrompt(request.target, context),
+            content: prompt,
           },
         ],
       });
@@ -254,7 +233,7 @@ async function explainSelectionValue(
         repository: request.repositoryUrl,
       },
     },
-  )();
+  )(traceInput);
 }
 
 export async function explainSelection(
