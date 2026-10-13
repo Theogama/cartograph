@@ -41,6 +41,9 @@ export interface LayoutOptions {
 }
 
 const MAX_MODULES = 24;
+const COLLAPSED_MODULE_WIDTH = 224;
+const COLLAPSED_MODULE_HEIGHT = 120;
+const EXPANDED_MODULE_WIDTH = 352;
 const MODULE_VERTICAL_GAP = 56;
 const MODULE_HORIZONTAL_GAP = 144;
 
@@ -241,13 +244,10 @@ export function layoutDependencyMap(
 
   for (const group of dependencyMap.modules) {
     const isExpanded = options.expandedModuleIds.has(group.id);
-    const labelWidth = Math.min(280, Math.max(180, group.label.length * 8 + 62));
-    const visibleFileCount = Math.min(group.files.length, options.visibleRows);
-    const hasOverflow = group.files.length > visibleFileCount;
-    const width = isExpanded ? 352 : labelWidth;
+    const width = isExpanded ? EXPANDED_MODULE_WIDTH : COLLAPSED_MODULE_WIDTH;
     const height = isExpanded
-      ? 68 + visibleFileCount * 28 + (hasOverflow ? 34 : 0)
-      : 58 + Math.min(144, Math.ceil(Math.sqrt(group.fanIn) * 18));
+      ? 68 + options.visibleRows * 28 + 34
+      : COLLAPSED_MODULE_HEIGHT;
 
     graph.setNode(group.id, { width, height });
   }
