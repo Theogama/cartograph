@@ -5,6 +5,14 @@ type Table<Row, Insert = Partial<Row>, Update = Partial<Row>> = {
   Relationships: [];
 };
 
+export type Json =
+  | string
+  | number
+  | boolean
+  | null
+  | { [key: string]: Json | undefined }
+  | Json[];
+
 export type Database = {
   public: {
     Tables: {
@@ -14,16 +22,30 @@ export type Database = {
         project_id: string;
         repository_url: string;
         status: "pending" | "running" | "completed" | "failed";
+        commit_sha: string | null;
+        stage: "fetching" | "selecting" | "parsing" | "storing" | "complete" | "failed" | null;
+        stage_message: string | null;
+        failed_stage: "fetching" | "selecting" | "parsing" | "storing" | null;
+        error_message: string | null;
+        framework: string | null;
+        summary: Json | null;
+        coverage: Json | null;
         created_at: string;
+        updated_at: string;
       }>;
       edges: Table<{
         id: string;
         organization_id: string;
         analysis_id: string;
         source_file_id: string;
-        target_file_id: string;
+        target_file_id: string | null;
+        target_path: string | null;
         specifier: string;
-        kind: string;
+        kind: "import" | "re-export" | "dynamic-import" | "require";
+        status: "inside" | "outside" | "excluded" | "unresolved";
+        reason: string | null;
+        line: number | null;
+        column_number: number | null;
         created_at: string;
       }>;
       explanations: Table<{
@@ -50,6 +72,14 @@ export type Database = {
         organization_id: string;
         analysis_id: string;
         path: string;
+        module: string | null;
+        folder: string | null;
+        kind: "ts" | "tsx" | "js" | "jsx" | "mjs" | "cjs" | "mts" | "cts" | null;
+        lines: number | null;
+        size: number | null;
+        hash: string | null;
+        fan_in: number | null;
+        fan_out: number | null;
         created_at: string;
       }>;
       insights: Table<{
@@ -58,6 +88,14 @@ export type Database = {
         analysis_id: string;
         kind: string;
         content: string;
+        created_at: string;
+      }>;
+      skipped_files: Table<{
+        id: string;
+        organization_id: string;
+        analysis_id: string;
+        path: string;
+        reason: string;
         created_at: string;
       }>;
       organizations: Table<{

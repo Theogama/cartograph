@@ -1,22 +1,22 @@
+import Link from "next/link";
+import type { ReactNode } from "react";
 import { InviteMembersButton, OrganizationSwitcher, UserButton } from "@clerk/nextjs";
 
+import { LiveAnalysisTable } from "@/components/live-analysis-table";
+import { RepositoryAnalysisForm } from "@/components/repository-analysis-form";
 import { ThemeToggle } from "@/components/theme-toggle";
-
-type AnalysisSummary = {
-  id: string;
-  repository_url: string;
-  status: "pending" | "running" | "completed" | "failed";
-  created_at: string;
-};
+import type { AnalysisProgressSnapshot } from "@/lib/analysis-progress";
 
 export function AppShell({
   analyses,
   organizationId,
   organizationSlug,
+  children,
 }: {
-  analyses: AnalysisSummary[];
+  analyses: AnalysisProgressSnapshot[];
   organizationId: string | null;
   organizationSlug: string | null;
+  children?: ReactNode;
 }) {
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -32,6 +32,12 @@ export function AppShell({
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
+            <Link
+              href="/workspace/evals"
+              className="rounded-md border border-border px-3 py-2 text-xs font-medium text-foreground/80 transition hover:bg-black/5 hover:text-foreground dark:hover:bg-white/10"
+            >
+              Evaluations
+            </Link>
             <ThemeToggle />
             <OrganizationSwitcher />
             <InviteMembersButton />
@@ -55,41 +61,14 @@ export function AppShell({
           </p>
         </section>
 
-        {analyses.length === 0 ? (
-          <section className="rounded-lg border border-border bg-panel px-5 py-8">
-            <h2 className="text-sm font-medium">No analyses yet</h2>
-            <p className="mt-1 text-sm text-foreground/60">
-              Analyses for this organization will appear here.
-            </p>
+        {organizationId ? (
+          <section className="rounded-lg border border-border bg-panel p-4">
+            <h2 className="mb-3 text-sm font-medium">Analyse a public repository</h2>
+            <RepositoryAnalysisForm />
           </section>
-        ) : (
-          <div className="overflow-x-auto rounded-lg border border-border bg-panel">
-            <table className="w-full border-collapse text-left text-sm">
-              <thead>
-                <tr className="border-b border-border font-mono text-[11px] uppercase tracking-wide text-foreground/60">
-                  <th className="px-4 py-3 font-medium">Repository</th>
-                  <th className="px-4 py-3 font-medium">State</th>
-                  <th className="px-4 py-3 font-medium">Created</th>
-                </tr>
-              </thead>
-              <tbody>
-                {analyses.map((analysis) => (
-                  <tr key={analysis.id} className="border-b border-border last:border-0">
-                    <td className="max-w-xl truncate px-4 py-3 font-mono text-xs">
-                      {analysis.repository_url}
-                    </td>
-                    <td className="px-4 py-3">{analysis.status}</td>
-                    <td className="whitespace-nowrap px-4 py-3 text-xs text-foreground/60">
-                      <time dateTime={analysis.created_at}>
-                        {new Date(analysis.created_at).toLocaleString()}
-                      </time>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+        ) : null}
+
+        {children ?? <LiveAnalysisTable initialAnalyses={analyses} />}
       </main>
     </div>
   );

@@ -3,7 +3,7 @@ import { existsSync, promises as fs, readFileSync, statSync } from "node:fs";
 import path from "node:path";
 import { Project, SyntaxKind } from "ts-morph";
 
-export type ImportKind = "import" | "re-export" | "dynamic-import";
+export type ImportKind = "import" | "re-export" | "dynamic-import" | "require";
 export type ResolutionStatus = "inside" | "outside" | "excluded" | "unresolved";
 
 export interface FileRecord {
@@ -25,8 +25,8 @@ export interface ImportRecord {
   kind: ImportKind;
   status: ResolutionStatus;
   reason?: string;
-  line: number;
-  column: number;
+  line: number | null;
+  column: number | null;
 }
 
 export interface SkipRecord {
@@ -44,12 +44,26 @@ export interface CoverageSummary {
   outsideExamples: ImportRecord[];
 }
 
+export interface RouteRecord {
+  filePath: string;
+  method: string;
+  path: string;
+}
+
+export interface FileRoleRecord {
+  path: string;
+  role: string;
+  source: "convention";
+}
+
 export interface RepositoryParseResult {
   root: string;
   framework: string | null;
   generatedAt: string;
   files: FileRecord[];
   edges: ImportRecord[];
+  routes: RouteRecord[];
+  fileRoles: FileRoleRecord[];
   skippedFiles: SkipRecord[];
   summary: {
     filesFound: number;
@@ -67,10 +81,16 @@ export interface RepositoryParseResult {
 
 export interface RepositoryAdapter {
   detectFramework(rootPath: string, files: FileRecord[]): string | null;
+  extractFrameworkMetadata?: (
+    rootPath: string,
+    files: FileRecord[],
+    project: Project,
+  ) => { routes: RouteRecord[]; fileRoles: FileRoleRecord[] };
 }
 
 export const noFrameworkAdapter: RepositoryAdapter = {
   detectFramework: () => null,
+  extractFrameworkMetadata: () => ({ routes: [], fileRoles: [] }),
 };
 
 const SUPPORTED_EXTENSIONS = new Set([
@@ -83,6 +103,13 @@ const SUPPORTED_EXTENSIONS = new Set([
   ".mts",
   ".cts",
 ]);
+
+function isDeclarationFile(filePath: string): boolean {
+  const normalizedPath = filePath.toLowerCase();
+  return normalizedPath.endsWith(".d.ts") ||
+    normalizedPath.endsWith(".d.mts") ||
+    normalizedPath.endsWith(".d.cts");
+}
 
 const EXCLUDED_DIRECTORIES = new Set([
   ".git",
@@ -154,8 +181,7 @@ async function collectFiles(rootPath: string, skippedFiles: SkipRecord[]): Promi
         continue;
       }
 
-      const isDeclarationFile = filePath.toLowerCase().endsWith(".d.ts") || filePath.toLowerCase().endsWith(".d.mts") || filePath.toLowerCase().endsWith(".d.cts");
-      if (isDeclarationFile) {
+      if (isDeclarationFile(filePath)) {
         const relativePath = normalizePath(path.relative(rootPath, filePath));
         skippedFiles.push({ path: relativePath, reason: "Type declaration file" });
         continue;
@@ -257,7 +283,8 @@ function resolveImportTarget(specifier: string, sourceFilePath: string, rootPath
     const resolvedPath = `${candidatePath}${suffix}`;
     const fileExists = (() => {
       try {
-        return existsSync(resolvedPath) && statSync(resolvedPath).isFile();
+        return existsSync(/* turbopackIgnore: true */ resolvedPath) &&
+          statSync(/* turbopackIgnore: true */ resolvedPath).isFile();
       } catch {
         return false;
       }
@@ -267,7 +294,25 @@ function resolveImportTarget(specifier: string, sourceFilePath: string, rootPath
       if (!isInsideDirectory(resolvedPath, rootPath)) {
         return { status: "outside", target: null, reason: "Import points outside the repository root" };
       }
-      return { status: "inside", target: normalizePath(path.relative(rootPath, resolvedPath)) };
+
+      const target = normalizePath(path.relative(rootPath, resolvedPath));
+      const extension = path.extname(resolvedPath).toLowerCase();
+      if (!SUPPORTED_EXTENSIONS.has(extension)) {
+        return {
+          status: "excluded",
+          target,
+          reason: `Import resolves to an unsupported file type: ${extension || "none"}`,
+        };
+      }
+      if (isDeclarationFile(resolvedPath)) {
+        return {
+          status: "excluded",
+          target,
+          reason: "Import resolves to a type declaration file",
+        };
+      }
+
+      return { status: "inside", target };
     }
   }
 
@@ -322,16 +367,16 @@ function createImportEdges(sourceFilePath: string, rootPath: string, project: Pr
 
   for (const expression of sourceFile.getDescendantsOfKind(SyntaxKind.CallExpression)) {
     const expressionText = expression.getExpression().getText();
-    if (expressionText !== "import") {
-      continue;
-    }
-
     const argument = expression.getArguments()[0];
     if (!argument || !argument.isKind(SyntaxKind.StringLiteral)) {
       continue;
     }
 
-    collectSpecifier(argument.getLiteralValue(), "dynamic-import");
+    if (expressionText === "import") {
+      collectSpecifier(argument.getLiteralValue(), "dynamic-import");
+    } else if (expressionText === "require") {
+      collectSpecifier(argument.getLiteralValue(), "require");
+    }
   }
 
   return edges;
@@ -382,12 +427,19 @@ export async function parseRepository(rootPath: string, adapter: RepositoryAdapt
     unresolvedImports: allEdges.filter((edge) => edge.status === "unresolved").length,
   };
 
+  const framework = adapter.detectFramework(absoluteRoot, records);
+  const frameworkMetadata = adapter.extractFrameworkMetadata
+    ? adapter.extractFrameworkMetadata(absoluteRoot, records, project)
+    : { routes: [], fileRoles: [] };
+
   return {
     root: normalizePath(absoluteRoot),
-    framework: adapter.detectFramework(absoluteRoot, records),
+    framework,
     generatedAt: new Date().toISOString(),
     files: records,
     edges: allEdges,
+    routes: frameworkMetadata.routes,
+    fileRoles: frameworkMetadata.fileRoles,
     skippedFiles,
     summary,
     coverage,
