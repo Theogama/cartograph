@@ -38,6 +38,10 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 ## Evaluations
 
 Set `LANGSMITH_API_KEY`, `LANGSMITH_PROJECT`, and `OPENROUTER_API_KEY` in `.env.local`.
+If LangSmith returns 403 while resolving the project name, set `LANGSMITH_PROJECT_ID`
+to the project's UUID; prompt comparison will use it directly instead.
+If the direct query also returns 403, set `LANGSMITH_WORKSPACE_ID` to the ID of the
+workspace that contains the project.
 After running the app and explaining at least one file, use the workspace **Evaluations**
 dashboard to check recent explanations, run the held-out role classifier, or compare
 the current and retired prompts. Prompt comparison uses a model judge and makes model

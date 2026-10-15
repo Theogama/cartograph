@@ -24,6 +24,12 @@ type Selection =
   | null;
 
 type SkippedFile = { path: string; reason: string };
+type AskToolStep = { name: string; summary: string; detail: string[] };
+type AskStreamEvent =
+  | { type: "tool"; tool: AskToolStep }
+  | { type: "answer"; answer: string; target: string | null }
+  | { type: "error"; error: string };
+
 type RailCategory = {
   name: string;
   count: number;
@@ -33,6 +39,63 @@ type RailCategory = {
 
 const CONFIG_CATEGORY_COLOR = "#38bdf8";
 const UNCLASSIFIED_CATEGORY_COLOR = "#a78bfa";
+
+function parseAskStreamEvent(block: string): AskStreamEvent | null {
+  const data = block
+    .split("\n")
+    .filter((line) => line.startsWith("data:"))
+    .map((line) => line.slice("data:".length).trimStart())
+    .join("\n");
+  if (!data) {
+    return null;
+  }
+
+  let value: unknown;
+  try {
+    value = JSON.parse(data);
+  } catch {
+    throw new Error("Deep Agent sent an invalid progress message.");
+  }
+  if (typeof value !== "object" || value === null || Array.isArray(value) || !("type" in value)) {
+    throw new Error("Deep Agent sent an unsupported progress message.");
+  }
+
+  if (
+    value.type === "tool" &&
+    "tool" in value &&
+    typeof value.tool === "object" &&
+    value.tool !== null &&
+    "name" in value.tool &&
+    typeof value.tool.name === "string" &&
+    "summary" in value.tool &&
+    typeof value.tool.summary === "string" &&
+    "detail" in value.tool &&
+    Array.isArray(value.tool.detail) &&
+    value.tool.detail.every((item) => typeof item === "string")
+  ) {
+    return {
+      type: "tool",
+      tool: {
+        name: value.tool.name,
+        summary: value.tool.summary,
+        detail: value.tool.detail,
+      },
+    };
+  }
+  if (
+    value.type === "answer" &&
+    "answer" in value &&
+    typeof value.answer === "string" &&
+    "target" in value &&
+    (typeof value.target === "string" || value.target === null)
+  ) {
+    return { type: "answer", answer: value.answer, target: value.target };
+  }
+  if (value.type === "error" && "error" in value && typeof value.error === "string") {
+    return { type: "error", error: value.error };
+  }
+  throw new Error("Deep Agent sent an unsupported progress message.");
+}
 
 function isConfigFile(filePath: string): boolean {
   const segments = filePath.toLowerCase().split("/");
@@ -125,7 +188,7 @@ export function AnalysisExplorer({
   const [askAnswer, setAskAnswer] = useState<string | null>(null);
   const [askError, setAskError] = useState<string | null>(null);
   const [askLoading, setAskLoading] = useState(false);
-  const [askSteps, setAskSteps] = useState<Array<{ name: string; summary: string; detail: string[] }>>([]);
+  const [askSteps, setAskSteps] = useState<AskToolStep[]>([]);
   const [lastRepositoryQuestion, setLastRepositoryQuestion] = useState<string | null>(null);
   const [lastRepositoryTarget, setLastRepositoryTarget] = useState<string | null>(null);
   const [graphWalk, setGraphWalk] = useState<
@@ -322,38 +385,90 @@ export function AnalysisExplorer({
     setAskMode(true);
 
     try {
-      const response = await fetch(`/api/analysis/${analysisId}/agent`, {
+      const response = await fetch(`/api/agent`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
         body: JSON.stringify({
+          analysisId,
           question,
           previousQuestion: lastRepositoryQuestion,
           previousTarget: lastRepositoryTarget,
         }),
       });
 
-      const data = (await response.json()) as {
-        error?: string;
-        answer?: string;
-        toolCalls?: Array<{ name: string; summary: string; detail: string[] }>;
-        target?: string | null;
+      if (!response.ok) {
+        const responseText = await response.text();
+        let errorMessage = `Deep Agent request failed (HTTP ${response.status}).`;
+        try {
+          const errorData: unknown = JSON.parse(responseText);
+          if (
+            typeof errorData === "object" &&
+            errorData !== null &&
+            "error" in errorData &&
+            typeof errorData.error === "string"
+          ) {
+            errorMessage = errorData.error;
+          }
+        } catch {
+          if (!responseText.trim()) {
+            errorMessage = `Deep Agent returned an empty response (HTTP ${response.status}).`;
+          }
+        }
+        throw new Error(errorMessage);
+      }
+
+      if (!response.headers.get("content-type")?.includes("text/event-stream") || !response.body) {
+        throw new Error("Deep Agent did not return a progress stream.");
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let answerReceived = false;
+
+      const handleEvent = (block: string) => {
+        const message = parseAskStreamEvent(block);
+        if (!message) {
+          return;
+        }
+        if (message.type === "tool") {
+          setAskSteps((current) => [...current, message.tool]);
+        } else if (message.type === "answer") {
+          answerReceived = true;
+          setAskAnswer(message.answer);
+          setLastRepositoryQuestion(question);
+          setLastRepositoryTarget(message.target ?? lastRepositoryTarget);
+        } else {
+          throw new Error(message.error);
+        }
       };
 
-      if (!response.ok || !data.answer) {
-        throw new Error(data.error ?? "The agent could not answer that question.");
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          buffer += decoder.decode(value, { stream: !done }).replace(/\r\n/g, "\n");
+          let boundary = buffer.indexOf("\n\n");
+          while (boundary !== -1) {
+            handleEvent(buffer.slice(0, boundary));
+            buffer = buffer.slice(boundary + 2);
+            boundary = buffer.indexOf("\n\n");
+          }
+          if (done) {
+            if (buffer.trim()) {
+              handleEvent(buffer);
+            }
+            break;
+          }
+        }
+      } finally {
+        reader.releaseLock();
       }
 
-      const steps = data.toolCalls ?? [];
-      for (const [index, step] of steps.entries()) {
-        setAskSteps((current) => [...current, step]);
-        await new Promise((resolve) => setTimeout(resolve, 220 + index * 120));
+      if (!answerReceived) {
+        throw new Error("Deep Agent ended the progress stream without an answer.");
       }
-
-      setAskAnswer(data.answer);
-      setLastRepositoryQuestion(question);
-      setLastRepositoryTarget(data.target ?? lastRepositoryTarget);
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setAskError(message);
@@ -704,6 +819,9 @@ export function AnalysisExplorer({
                   <h2 className="font-mono text-[10px] uppercase tracking-[0.15em] text-foreground/50">
                     Ask the repo
                   </h2>
+                  <span className="font-mono text-[9px] text-foreground/40">
+                    Deep Agent
+                  </span>
                   <button
                     className="font-mono text-[10px] text-foreground/55 hover:text-foreground"
                     onClick={closeAskMode}

@@ -1,4 +1,4 @@
-import type { FileRecord, ImportRecord } from "@/lib/repository-parser";
+import type { FileRecord, ImportRecord } from "./repository-parser.ts";
 
 export type GraphDirection = "incoming" | "outgoing";
 

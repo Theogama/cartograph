@@ -25,7 +25,9 @@ import {
 import type { FileRecord, ImportRecord } from "@/lib/repository-parser";
 
 const MAX_VISIBLE_FILES = 8;
-const COLLAPSED_MODULE_HEIGHT = 120;
+const COLLAPSED_MODULE_HEIGHT = 108;
+const EXPANDED_HEADER_HEIGHT = 60;
+const EXPANDED_FILE_ROW_HEIGHT = 26;
 const INCOMING_EDGE_COLOR = "#22c55e";
 const OUTGOING_EDGE_COLOR = "#f59e0b";
 const NEUTRAL_EDGE_COLOR = "#64748b";
@@ -88,11 +90,11 @@ function moduleHandleTop(
   if (expanded) {
     const visibleFileIndex = Math.min(fileIndex, MAX_VISIBLE_FILES);
     return fileIndex < MAX_VISIBLE_FILES
-      ? 68 + visibleFileIndex * 28 + 14
-      : 68 + MAX_VISIBLE_FILES * 28 + 17;
+      ? EXPANDED_HEADER_HEIGHT + visibleFileIndex * EXPANDED_FILE_ROW_HEIGHT + 13
+      : EXPANDED_HEADER_HEIGHT + MAX_VISIBLE_FILES * EXPANDED_FILE_ROW_HEIGHT + 15;
   }
 
-  return 18 + ((fileIndex + 1) / (fileCount + 1)) * (COLLAPSED_MODULE_HEIGHT - 36);
+  return 16 + ((fileIndex + 1) / (fileCount + 1)) * (COLLAPSED_MODULE_HEIGHT - 32);
 }
 
 function ModuleNode({ data }: NodeProps<ModuleFlowNode>) {
@@ -149,7 +151,7 @@ function ModuleNode({ data }: NodeProps<ModuleFlowNode>) {
       {expanded ? (
         <>
           <button
-            className="flex h-[68px] w-full items-center justify-between border-b border-border px-3 text-left hover:bg-foreground/[0.035]"
+            className="flex h-[60px] w-full items-center justify-between border-b border-border px-3 text-left hover:bg-foreground/[0.035]"
             onClick={(event) => {
               event.stopPropagation();
               data.onSelectModule(module.id);
@@ -170,13 +172,13 @@ function ModuleNode({ data }: NodeProps<ModuleFlowNode>) {
             </span>
           </button>
 
-          <ul className="nowheel max-h-[224px] overflow-y-auto divide-y divide-border/70">
+          <ul className="nowheel max-h-[208px] overflow-y-auto divide-y divide-border/70">
             {visibleFiles.map((file) => (
               <li key={file.path}>
                 <button
                   aria-pressed={selectedFilePath === file.path}
                   className={[
-                    "nodrag nowheel flex h-7 w-full items-center truncate px-3 text-left font-mono text-[10px]",
+                    "nodrag nowheel flex h-[26px] w-full items-center truncate px-3 text-left font-mono text-[10px]",
                     !data.hasSelection || data.highlightedFilePaths.has(file.path)
                       ? "opacity-100"
                       : "opacity-55",
@@ -200,11 +202,11 @@ function ModuleNode({ data }: NodeProps<ModuleFlowNode>) {
           </ul>
 
           {hiddenFileCount > 0 ? (
-            <div className="flex h-[34px] items-center border-t border-border px-3 font-mono text-[10px] text-foreground/50">
+            <div className="flex h-[30px] items-center border-t border-border px-3 font-mono text-[10px] text-foreground/50">
               + {hiddenFileCount} more files
             </div>
           ) : (
-            <div className="flex h-[34px] items-center border-t border-border px-3 font-mono text-[10px] text-foreground/50">
+            <div className="flex h-[30px] items-center border-t border-border px-3 font-mono text-[10px] text-foreground/50">
               All files shown
             </div>
           )}
@@ -479,7 +481,7 @@ function ReactFlowCanvas({
           sourceHandle: `source:${link.sourceFile}`,
           targetHandle: `target:${link.targetFile}`,
           type: "default",
-          pathOptions: { curvature: 0.72 },
+          pathOptions: { curvature: 1.05 },
           markerEnd: { type: MarkerType.ArrowClosed, color },
           selectable: false,
           style: {

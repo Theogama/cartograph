@@ -41,11 +41,11 @@ export interface LayoutOptions {
 }
 
 const MAX_MODULES = 24;
-const COLLAPSED_MODULE_WIDTH = 224;
-const COLLAPSED_MODULE_HEIGHT = 120;
-const EXPANDED_MODULE_WIDTH = 352;
-const MODULE_VERTICAL_GAP = 56;
-const MODULE_HORIZONTAL_GAP = 144;
+const COLLAPSED_MODULE_WIDTH = 204;
+const COLLAPSED_MODULE_HEIGHT = 108;
+const EXPANDED_MODULE_WIDTH = 320;
+const MODULE_VERTICAL_GAP = 88;
+const MODULE_HORIZONTAL_GAP = 192;
 
 function folderDepth(folder: string): number {
   return folder === "." ? 0 : folder.split("/").length;
@@ -234,9 +234,9 @@ export function layoutDependencyMap(
   const graph = new dagre.graphlib.Graph({ multigraph: true });
   graph.setGraph({
     rankdir: "LR",
-    nodesep: 64,
-    ranksep: 144,
-    edgesep: 28,
+    nodesep: 88,
+    ranksep: 192,
+    edgesep: 48,
     marginx: 40,
     marginy: 40,
   });
@@ -246,7 +246,7 @@ export function layoutDependencyMap(
     const isExpanded = options.expandedModuleIds.has(group.id);
     const width = isExpanded ? EXPANDED_MODULE_WIDTH : COLLAPSED_MODULE_WIDTH;
     const height = isExpanded
-      ? 68 + options.visibleRows * 28 + 34
+      ? 60 + options.visibleRows * 26 + 30
       : COLLAPSED_MODULE_HEIGHT;
 
     graph.setNode(group.id, { width, height });

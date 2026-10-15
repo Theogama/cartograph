@@ -71,23 +71,34 @@ export async function loadRecentExplanationTraces(
   days: number = 7,
 ): Promise<ExplanationTraceSample[]> {
   const apiKey = process.env.LANGSMITH_API_KEY;
+  const projectId = process.env.LANGSMITH_PROJECT_ID;
   const projectName = process.env.LANGSMITH_PROJECT;
   if (!apiKey) {
     throw new Error("Set LANGSMITH_API_KEY to evaluate real explanation traffic.");
   }
-  if (!projectName) {
-    throw new Error("Set LANGSMITH_PROJECT to the project containing Cartograph explanation traces.");
+  const projectScope = projectId
+    ? { projectId }
+    : projectName
+      ? { projectName }
+      : null;
+  if (!projectScope) {
+    throw new Error(
+      "Set LANGSMITH_PROJECT_ID or LANGSMITH_PROJECT to the project containing Cartograph explanation traces.",
+    );
   }
 
   const client = new Client({
     apiKey,
     ...(process.env.LANGSMITH_ENDPOINT ? { apiUrl: process.env.LANGSMITH_ENDPOINT } : {}),
+    ...(process.env.LANGSMITH_WORKSPACE_ID
+      ? { workspaceId: process.env.LANGSMITH_WORKSPACE_ID }
+      : {}),
   });
   const startTime = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
   const samples: ExplanationTraceSample[] = [];
 
   for await (const run of client.listRuns({
-    projectName,
+    ...projectScope,
     isRoot: true,
     filter: 'eq(name, "cartograph.explain")',
     startTime,

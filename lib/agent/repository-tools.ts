@@ -1,10 +1,10 @@
-import { walkGraph } from "@/lib/graph-maths";
+import { walkGraph } from "../graph-maths.ts";
 import type {
   FileRecord,
   FileRoleRecord,
   ImportRecord,
   RouteRecord,
-} from "@/lib/repository-parser";
+} from "../repository-parser.ts";
 
 export type GraphToolCall = {
   name: string;
